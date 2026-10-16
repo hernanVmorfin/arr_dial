@@ -1,0 +1,35 @@
+import type { APIRoute } from 'astro';
+import DIAL from '../../../data/dial.json';
+import { chicagoMonth, inSeason } from '../../lib/rules.js';
+import { supabaseConfig, supabaseDb } from '../../lib/db-supabase.ts';
+import { mondayConfigured } from '../../lib/monday.ts';
+import { podiumConfigured } from '../../lib/podium.ts';
+import { klaviyoConfigured } from '../../lib/klaviyo.ts';
+import { envOf, ipLimitsOn } from '../../lib/runtime.ts';
+import { envVar } from '../../lib/env.ts';
+import { clientIp, json } from '../../lib/http.ts';
+
+/* GET /api/health[?deep=1]. `build` answers "did my push ship?". ?deep=1 also reads Supabase and shows the IP this
+ * Worker sees for you: if it isn't your own IP (Webflow's proxy, the same for everyone), set DIAL_IP_LIMITS=off.
+ * The typeof guard matters: a bare __BUILD__ throws if the define is ever dropped, and health has to answer. */
+const build = typeof __BUILD__ === 'undefined' ? { commit: 'unknown', builtAt: null } : __BUILD__;
+
+export const GET: APIRoute = async (ctx) => {
+  const { request, locals, url } = ctx;
+  const env = envOf(locals);
+  const deep = url.searchParams.get('deep') === '1';
+  const supabase = !supabaseConfig(env) ? 'not_configured' : deep ? await supabaseDb(env).probe() : 'configured';
+  const month = chicagoMonth();
+  return json(request, {
+    ok: true, dial: supabase !== 'not_configured', build,
+    integrations: {
+      supabase,
+      monday: mondayConfigured(env), mondayCodeStatusColumn: !!envVar(env, 'MONDAY_CODE_STATUS_COLUMN'), mondayWebhook: !!envVar(env, 'MONDAY_WEBHOOK_SECRET'),
+      podium: podiumConfigured(env), klaviyo: klaviyoConfigured(env), klaviyoSmsList: !!envVar(env, 'KLAVIYO_SMS_LIST_ID'),
+      turnstile: !!(envVar(env, 'TURNSTILE_SITE_KEY') && envVar(env, 'TURNSTILE_SECRET_KEY'))
+    },
+    ipLimits: ipLimitsOn(env),
+    season: { month, freeYearInSeason: inSeason(DIAL, month), months: DIAL.membership.months },
+    ...(deep ? { yourIp: clientIp(request, () => ctx.clientAddress) } : {})
+  });
+};

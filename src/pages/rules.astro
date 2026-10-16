@@ -1,0 +1,113 @@
+---
+/* /dial/rules — the official rules, generated from data/dial.json so the odds, values, dates and limits on this page
+ * can never drift from what the server actually does. While data/dial.json has rulesFinal:false the page says it is
+ * a draft; flip it after the legal read. */
+import DIAL from '../../data/dial.json';
+import { oddsInPlay } from '../lib/rules.js';
+
+const MEM = DIAL.membership.giftId;
+const months = DIAL.membership.months;
+const monthName = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+const last = months[months.length - 1];
+const [ly, lm] = last.split('-').map(Number);
+const endDate = new Date(Date.UTC(ly, lm, 0)).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const withMem = oddsInPlay(DIAL, true), withoutMem = oddsInPlay(DIAL, false);
+const pct = (n: number) => `${Number(n.toFixed(1))}%`;
+const svc = DIAL.gifts[0];
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Comfort Dial Rules | Always Ready Repair</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,700..900&family=Oswald:wght@500;600&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      :root { --blue:#084e91; --red:#ee292f; --white:#f9f7f8; --black:#221f20; --navy:#14284e; --gray:#dee5ee; --muted:#5c6672; --line:#c9d4e2; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--white); color: var(--black); font: 16px/1.6 Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+      .wrap { max-width: 780px; margin: 0 auto; padding: 32px 16px 64px; }
+      .brandline { font: 500 12.5px/1.5 Oswald, sans-serif; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+      .brandline b { color: var(--black); }
+      h1 { font: 900 clamp(28px, 5.4vw, 46px)/1.02 Archivo, Arial Black, sans-serif; font-stretch: 125%; text-transform: uppercase; letter-spacing: -.02em; color: var(--blue); margin: 6px 0 0; }
+      h2 { font: 900 clamp(18px, 2.4vw, 22px)/1.1 Archivo, Arial Black, sans-serif; font-stretch: 125%; text-transform: uppercase; letter-spacing: -.01em; color: var(--blue); margin: 30px 0 8px; }
+      .stripe { height: 7px; border-radius: 99px; background: linear-gradient(90deg, var(--red) 0 50%, var(--blue) 50% 100%); margin: 14px 0 22px; }
+      .draft { background: var(--gray); border-left: 5px solid var(--red); border-radius: 10px; padding: 14px 18px; font-weight: 600; }
+      p, li { max-width: 68ch; }
+      .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+      table { width: 100%; border-collapse: collapse; font-size: 14.5px; min-width: 520px; }
+      th { background: var(--navy); color: var(--white); font: 600 12px/1.2 Oswald, sans-serif; text-transform: uppercase; letter-spacing: .07em; text-align: left; padding: 11px 14px; }
+      td { padding: 11px 14px; border-top: 1px solid var(--line); background: #fff; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      a { color: var(--blue); }
+      .foot { margin-top: 44px; padding-top: 14px; border-top: 2px solid var(--line); font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brandline"><b>ARR Heating + Cooling</b> · Since 1935 · Orland Park, IL</div>
+      <h1>Comfort Dial Official Rules</h1>
+      <div class="stripe"></div>
+      {!DIAL.rulesFinal && <p class="draft">Draft for review. These rules are not in effect yet.</p>}
+
+      <h2>1. Sponsor</h2>
+      <p>Always Ready Repair (ARR Heating + Cooling), Orland Park, Illinois. Phone {DIAL.phone}. Email office@arrhvac.com.</p>
+
+      <h2>2. When it runs</h2>
+      <p>The Comfort Dial runs on alwaysreadyrepair.com from its launch in {monthName(months[0])} through {endDate}, unless ARR ends it earlier or extends it. Any change will be posted on this page.</p>
+
+      <h2>3. Who can play</h2>
+      <p>Legal U.S. residents 18 or older who live in ARR's residential service area: ZIP codes beginning {DIAL.zipPrefixes.join(', ').replace(/, ([^,]*)$/, ' or $1')}. Employees of ARR and their households can't win.</p>
+
+      <h2>4. No purchase necessary</h2>
+      <p>Playing is free, and so is claiming a gift. Some gifts are discounts that apply only when you buy the related service. The free service call and the free year of membership need no purchase.</p>
+
+      <h2>5. How it works</h2>
+      <p>Open the dial on alwaysreadyrepair.com and turn it. ARR's server picks your gift at random, using the odds below, the moment you turn. Your browser only shows the result. We hold the gift for {DIAL.holdMinutes} minutes. To claim it, enter a U.S. mobile number before the hold runs out, and we text your code to that number. If the hold runs out, you can turn again, up to {DIAL.limits.turnsPerDevicePerDay} turns per device per day.</p>
+
+      <h2>6. Gifts, values and odds</h2>
+      <p>Every turn wins exactly one gift.</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Gift</th><th class="num">Value</th><th class="num">Odds</th></tr></thead>
+          <tbody>
+            {DIAL.gifts.map((g) => (
+              <tr><td>{g.name}<br /><span style="color:#5c6672;font-size:13px">{g.sub}</span></td><td class="num">${g.value}</td><td class="num">{pct(withMem[g.id])}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p>The free year of membership: one is available in each of these calendar months, Chicago time: {months.map(monthName).join(', ')} ({months.length} in total). While a month's free year has been claimed, or is held for another player during their {DIAL.holdMinutes}-minute hold, it is out of play, and the odds of the other gifts rise in proportion. For example, {svc.name.toLowerCase()} goes from {pct(withMem[svc.id])} to {pct(withoutMem[svc.id])}. Outside those months, no free year is available.</p>
+
+      <h2>7. Limits</h2>
+      <ul>
+        <li>One gift per mobile number.</li>
+        <li>One gift per household. ARR checks this when you book.</li>
+        <li>One free year of membership per household, for the home whose address you give when you claim it. That address must match a home in county property records.</li>
+        <li>Turns are limited per device and per internet connection each day.</li>
+      </ul>
+
+      <h2>8. Using your code</h2>
+      <p>Codes look like ARR-XXXX. Give your code when you book. It is tied to the mobile number you used to claim it. Codes expire {DIAL.expiresDays} days after you claim them. Each can be used once, has no cash value, can't be transferred, and can't be combined with other offers. Codes apply to residential service in ARR's service area. The free year covers 12 months of ARR's ${DIAL.gifts.find((g) => g.id === MEM)?.value} membership.</p>
+
+      <h2>9. Texts</h2>
+      <p>When you claim a gift, we send one text with your code to the number you entered. If you also tick the reminder box, you agree to receive reminder and marketing texts from ARR at that number, up to 4 per month. You don't have to agree to win. Message and data rates may apply. Reply STOP to opt out or HELP for help.</p>
+
+      <h2>10. Privacy</h2>
+      <p>We use your number to send your code, to find your code when you book, and, if you opted in, to send reminders and offers. See our <a href="https://www.alwaysreadyrepair.com/privacy-policy">Privacy Policy</a>.</p>
+
+      <h2>11. General</h2>
+      <p>ARR may end or change the Comfort Dial at any time, and may void any gift claimed by fraud, by automated means, or beyond the limits above. Void where prohibited. ARR's decisions on all matters relating to the Comfort Dial are final.</p>
+
+      <h2>12. Questions</h2>
+      <p>Call {DIAL.phone}.</p>
+
+      <div class="foot">
+        <div>Always Ready Repair · {DIAL.phone} · alwaysreadyrepair.com</div>
+        <div>Always Ready, Always Reliable.</div>
+      </div>
+    </div>
+  </body>
+</html>

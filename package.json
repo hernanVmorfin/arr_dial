@@ -1,0 +1,27 @@
+{
+  "name": "arr-dial",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ARR Comfort Dial: the thermostat gift dial popup for alwaysreadyrepair.com. Webflow Cloud app (Astro on Cloudflare Workers) mounted at /dial, serving dial.js and /api/*.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "check": "astro check",
+    "test": "node --experimental-strip-types --no-warnings --test \"src/**/*.test.ts\" \"src/**/*.test.js\"",
+    "deploy:check": "astro build && wrangler deploy dist/_worker.js/index.js --dry-run --outdir=dist/.dryrun"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "12.6.13",
+    "astro": "5.18.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@cloudflare/workers-types": "5.20260921.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.136.0"
+  }
+}

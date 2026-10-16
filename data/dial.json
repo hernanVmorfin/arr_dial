@@ -1,0 +1,34 @@
+{
+  "_note": "Comfort Dial gifts, odds and rules. Hand-maintained; code never hard-codes a gift, price or date. Each gift's weight is both its real odds and its arc on the dial: weights sum to 100 and each gift's zones sum to its weight (npm test fails otherwise). The free year is in play only during a month listed in membership.months, at most one per month, and drops out of the odds while unavailable.",
+  "season": "Furnace season",
+  "phone": "(708) 671-0813",
+  "bookUrl": "https://www.alwaysreadyrepair.com/book-service",
+  "rulesFinal": false,
+  "expiresDays": 30,
+  "holdMinutes": 10,
+  "zipPrefixes": ["604", "605", "606"],
+  "limits": {
+    "turnsPerDevicePerDay": 3,
+    "turnsPerIpPerDay": 12,
+    "claimsPerIpPerDay": 6
+  },
+  "membership": {
+    "giftId": "mem",
+    "months": ["2026-10", "2026-11", "2026-12", "2027-01", "2027-02"]
+  },
+  "gifts": [
+    { "id": "svc20",  "short": "$20 OFF",              "name": "$20 off any service",                  "sub": "Any repair or tune-up, no minimum",                                          "weight": 45, "value": 20,  "fill": "#084e91", "ink": "#f9f7f8" },
+    { "id": "duct50", "short": "$50 OFF DUCTS",        "name": "$50 off duct cleaning",                "sub": "Whole-home duct cleaning",                                                   "weight": 20, "value": 50,  "fill": "#03bce6", "ink": "#14284e" },
+    { "id": "wh50",   "short": "$50 OFF WATER HEATER", "name": "$50 off a new water heater",           "sub": "Installed by ARR",                                                           "weight": 15, "value": 50,  "fill": "#ee292f", "ink": "#f9f7f8" },
+    { "id": "call",   "short": "$129 FREE CALL",       "name": "Free service call ($129 value)",       "sub": "We waive the $129 trip fee. Any repair is billed at our published price",  "weight": 15, "value": 129, "fill": "#dee5ee", "ink": "#14284e" },
+    { "id": "mem",    "short": "$299 FREE YEAR",       "name": "Free year of membership ($299 value)", "sub": "Our $299 membership, free for 12 months",                                    "weight": 5,  "value": 299, "fill": "#ffcc04", "ink": "#14284e" }
+  ],
+  "zones": [
+    { "gift": "duct50", "pct": 20,   "big": "$50 OFF", "small": "DUCT CLEANING" },
+    { "gift": "svc20",  "pct": 32.5, "big": "$20 OFF", "small": "ANY SERVICE" },
+    { "gift": "mem",    "pct": 5,    "big": "$299",    "small": "FREE" },
+    { "gift": "svc20",  "pct": 12.5, "big": "$20 OFF", "small": "ANY SERVICE" },
+    { "gift": "call",   "pct": 15,   "big": "$129",    "small": "FREE CALL" },
+    { "gift": "wh50",   "pct": 15,   "big": "$50 OFF", "small": "WATER HEATER" }
+  ]
+}

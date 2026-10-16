@@ -1,0 +1,12 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["src/**/*", "data/**/*"],
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/**/*.test.js"]
+}
