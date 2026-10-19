@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   chicagoMonth, chicagoDate, pickGift, giftsInPlay, oddsInPlay, membershipsLeft, nextMembershipMonth, makeCode, isCode,
-  isUuid, normPhone, cleanFirstName, validateAddress, labelFontSize, arcUnits
+  isUuid, normPhone, cleanFirstName, validateAddress, labelFontSize, arcUnits, LABEL
 } from './rules.js';
 
 const cfg = JSON.parse(readFileSync(new URL('../../data/dial.json', import.meta.url), 'utf8'));
@@ -29,13 +29,13 @@ test('the free year sits at 72°F on the 50–90° scale', () => {
 });
 
 test('dial labels lead with a dollar value and stay big enough to read once fitted to their arc', () => {
-  // radii and maximum sizes match src/widget/index.js (R_BIG 127 at 16, R_SMALL 105 at 8.6)
+  // src/widget/face.js draws with LABEL; its radius is a plain slice's, the tighter case (the top prize sits raised)
   for (const z of cfg.zones) {
     assert.match(z.big, /^\$\d+/, `${z.gift} big label leads with a dollar value`);
-    const big = labelFontSize(z.big, arcUnits(z.pct, 127), 16);
-    const small = labelFontSize(z.small, arcUnits(z.pct, 105), 8.6);
-    assert.ok(big >= 13, `${z.big} shrinks to ${big.toFixed(1)}`);
-    assert.ok(small >= 7.5, `${z.small} shrinks to ${small.toFixed(1)}`);
+    const big = labelFontSize(z.big, arcUnits(z.pct, LABEL.big.radius), LABEL.big.max);
+    const small = labelFontSize(z.small, arcUnits(z.pct, LABEL.small.radius), LABEL.small.max);
+    assert.ok(big >= LABEL.big.min, `${z.big} shrinks to ${big.toFixed(1)}`);
+    assert.ok(small >= LABEL.small.min, `${z.small} shrinks to ${small.toFixed(1)}`);
   }
 });
 

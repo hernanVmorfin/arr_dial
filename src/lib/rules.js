@@ -125,9 +125,17 @@ export function labelFontSize(text, arcUnits, max, perChar = 0.52) {
 }
 export const arcUnits = (pct, radius) => (pct / 100) * 270 * Math.PI / 180 * radius;
 
-/* Label sizes on the dial face: radius and the largest font size for each line. src/widget/face.js draws with these;
- * below the minimum a label is hard to read on a phone. */
-export const LABEL = { big: { radius: 127, max: 16, min: 13 }, small: { radius: 105, max: 8.6, min: 7.5 } };
+/* The gift ring on the thermostat screen, in SVG units of its 400-wide face. src/widget/face.js draws with these, in
+ * the popup and the admin's preview alike. The top prize's slice is pushed outward by `raise`: deeper, never wider,
+ * because a slice's angle is its odds. */
+export const RING = { inner: 88, outer: 130, raise: 16 };
+/** Where the two label lines of a slice sit, given that slice's outer radius. */
+export const labelRadii = (outer) => ({ big: RING.inner + (outer - RING.inner) * 0.66, small: RING.inner + (outer - RING.inner) * 0.27 });
+
+/* Label sizes on the dial face: radius on a plain slice (the raised top prize gets more room), the largest font size
+ * for each line, and the minimum below which a label is hard to read on a phone. */
+const PLAIN = labelRadii(RING.outer);
+export const LABEL = { big: { radius: PLAIN.big, max: 17, min: 13 }, small: { radius: PLAIN.small, max: 8.6, min: 7.5 } };
 
 const round2 = (n) => Math.round(n * 100) / 100;
 const near = (a, b) => Math.abs(a - b) < 0.005;

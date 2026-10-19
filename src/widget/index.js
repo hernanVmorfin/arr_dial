@@ -5,9 +5,11 @@
  * Gifts, odds, the dial layout and when it opens by itself all come from /api/status: the live config published in
  * the admin (<base>admin). data/dial.json is bundled only as the fallback drawn before that answer arrives.
  *
- * A round wall thermostat: gifts sit on a 50–90°F scale, arc length = the real odds, the free year at 72°.
- * Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never this file, and holds it for
- * 10 minutes), then a mobile number claims it (/api/claim). A free-year winner also gives a home address.
+ * An ARR smart thermostat on the wall: gifts sit on a 50–90°F ring (face.js), arc length = the real odds, the free
+ * year raised as the top prize. Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never
+ * this file, and holds it for a few minutes), then a mobile number claims it (/api/claim). A free-year winner also
+ * gives a home address. The screen wakes with the time and the visitor's own weather (/api/weather), heats while it
+ * turns, shows a HOLD countdown while they claim, and ends on their code.
  *
  * Opens by itself delayMs after the page shows on a first visit, for visitors in the dial share of the test (split),
  * on any page not in excludePaths. Never on top of the pricing popup, never after a win, not again for snoozeDays
@@ -17,7 +19,7 @@
  * answers; `force: {...}` in it wins over the admin (the QA page uses that).
  * Vanilla JS, every class prefixed arrd- and every rule under .arrd-root, because it lives on someone else's page. */
 import BUILT_IN from '../../data/dial.json';
-import { svgInner, buildRing as drawRing, drawFace, angToF, fToAng, A0, A1 } from './face.js';
+import { svgInner, drawFace, hubSize, angToF, fToAng, A0, A1, VIEWBOX } from './face.js';
 import { adParams, pathOf, referrerOf, cookieOf, gaClientId, klaviyoExchangeId, deviceKind, UTM_KEYS } from '../lib/visit.js';
 
 const EMBED = window.__ARR_DIAL__ || {};
@@ -44,11 +46,16 @@ function applyDial(d) {
   if (d.popup) Object.assign(CFG, d.popup, EMBED.force || {});
   if (root) {
     buildFace(); renderOdds();
-    root.querySelectorAll('[data-arrd="call"]').forEach((a) => { a.href = `tel:${TEL}`; if (/^Call\b/.test(a.textContent) && a.textContent !== 'Call to book') a.textContent = `Call ${DIAL.phone}`; });
+    root.querySelectorAll('[data-arrd="call"]').forEach((a) => {
+      a.href = `tel:${TEL}`;
+      if (a.classList.contains('arrd-side')) a.setAttribute('aria-label', `Call ${DIAL.phone}`);
+      else if (/^Call\b/.test(a.textContent) && a.textContent !== 'Call to book') a.textContent = `Call ${DIAL.phone}`;
+    });
+    root.querySelectorAll('[data-arrd="book"]').forEach((a) => { a.href = DIAL.bookUrl; });
   }
 }
 
-/* ---------------- state that outlives the page: the device id, test group, a held gift, a win ---------------- */
+/* ---------------- state that outlives the page: the device id, test group, a held gift, a win, sound off ---------------- */
 const store = {
   get() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { return {}; } },
   set(patch) { try { localStorage.setItem(STORE, JSON.stringify({ ...store.get(), ...patch })); } catch (e) {} }
@@ -114,73 +121,157 @@ function track(ev, params = {}) {
   if (CFG.debug) { try { console.log('[dial]', ev, params); } catch (e) {} }
 }
 
+/* ---------------- icons (Feather, MIT; flame from Tabler, MIT) ---------------- */
+const PATHS = {
+  wifi: '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
+  flame: '<path d="M12 12c2 -2.96 0 -7 -1 -8c0 3.038 -1.773 4.741 -3 6c-1.226 1.26 -2 3.24 -2 5a6 6 0 1 0 12 0c0 -1.532 -1.056 -3.94 -2 -5c-1.786 3 -2.791 3 -4 2z"/>',
+  sound: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+  mute: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
+  cal: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  drop: '<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>',
+  sun: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+  rain: '<line x1="16" y1="13" x2="16" y2="21"/><line x1="8" y1="13" x2="8" y2="21"/><line x1="12" y1="15" x2="12" y2="23"/><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>',
+  snow: '<path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="8" y1="20" x2="8.01" y2="20"/><line x1="12" y1="18" x2="12.01" y2="18"/><line x1="12" y1="22" x2="12.01" y2="22"/><line x1="16" y1="16" x2="16.01" y2="16"/><line x1="16" y1="20" x2="16.01" y2="20"/>',
+  storm: '<path d="M19 16.9A5 5 0 0 0 18 7h-1.26a8 8 0 1 0-11.62 9"/><polyline points="13 11 9 17 15 17 11 23"/>',
+  wind: '<path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/>'
+};
+const icon = (n, cls = '') => `<svg class="arrd-i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${PATHS[n] || PATHS.cloud}</svg>`;
+
 /* ---------------- styles ---------------- */
+/* The sheet is a warm wall and the thermostat hangs on it. Text on the glass is sized in cqw (1% of the glass width),
+ * so the screen reads the same at 250 px on a phone as at 350 px on a laptop. */
 const CSS = `
 html.arrd-open{overflow:hidden}
 html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibility:hidden!important}
-.arrd-root,.arrd-tab{--blue:#084e91;--red:#ee292f;--lb:#03bce6;--white:#f9f7f8;--black:#221f20;--navy:#14284e;--gray:#dee5ee;--yellow:#ffcc04;--muted:#a9bcd6;--line:#2e4a72;
+.arrd-root,.arrd-tab{--blue:#084e91;--red:#ee292f;--lb:#03bce6;--white:#f9f7f8;--black:#221f20;--navy:#14284e;--gray:#dee5ee;--yellow:#ffcc04;--muted:#5c6672;--soft:#a9bcd6;--line:#c9d4e2;
   --head:"Archivo","Helvetica Neue",Arial,sans-serif;--sub:"Oswald","Barlow Condensed","Arial Narrow",sans-serif;--body:"Inter",-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
 .arrd-root,.arrd-root *,.arrd-tab{box-sizing:border-box}
 .arrd-root[hidden],.arrd-root [hidden],.arrd-tab[hidden]{display:none!important}
-.arrd-root{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(20,40,78,.55);font-family:var(--body);color:var(--white);line-height:1.5;-webkit-font-smoothing:antialiased;text-align:left}
-.arrd-sheet{position:relative;width:100%;max-width:440px;max-height:calc(100vh - 32px);overflow-y:auto;overscroll-behavior:contain;background:var(--navy);border-radius:18px;box-shadow:0 24px 70px -20px rgba(0,0,0,.6);padding:14px 24px 22px;animation:arrd-in .3s ease-out}
+.arrd-root{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(20,40,78,.55);font-family:var(--body);color:var(--black);line-height:1.5;-webkit-font-smoothing:antialiased;text-align:left}
+.arrd-root p{margin:0}
+.arrd-sheet{position:relative;width:100%;max-width:440px;max-height:calc(100vh - 32px);overflow-y:auto;overscroll-behavior:contain;background:radial-gradient(120% 80% at 30% 0%,#f9f7f8 0%,#dee5ee 72%,#c9d4e2 100%);border-radius:18px;box-shadow:0 24px 70px -20px rgba(0,0,0,.6);padding:12px 24px 22px;animation:arrd-in .3s ease-out}
 @keyframes arrd-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
 @keyframes arrd-up{from{transform:translateY(100%)}to{transform:none}}
 @media (max-width:640px){
   .arrd-root{align-items:flex-end;padding:0}
-  .arrd-sheet{max-width:none;border-radius:18px 18px 0 0;max-height:92vh;padding:12px 18px calc(18px + env(safe-area-inset-bottom,0px));animation:arrd-up .32s cubic-bezier(.2,.8,.2,1)}
+  .arrd-sheet{max-width:none;border-radius:18px 18px 0 0;max-height:92vh;padding:10px 18px calc(18px + env(safe-area-inset-bottom,0px));animation:arrd-up .32s cubic-bezier(.2,.8,.2,1)}
 }
-.arrd-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
-.arrd-logo{height:34px;width:auto;display:block;max-width:60%}
-.arrd-x{width:40px;height:40px;border-radius:50%;border:1px solid rgba(249,247,248,.28);background:transparent;color:var(--white);font:400 24px/1 var(--body);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
-.arrd-root button:focus-visible,.arrd-root a:focus-visible,.arrd-root input:focus-visible,.arrd-tab:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.arrd-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
+.arrd-brand{font:500 12.5px/1.3 var(--sub);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.arrd-brand b{font-weight:600;color:var(--navy)}
+.arrd-x{width:40px;height:40px;border-radius:50%;border:1px solid rgba(20,40,78,.25);background:transparent;color:var(--navy);font:400 24px/1 var(--body);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
+.arrd-root button:focus-visible,.arrd-root a:focus-visible,.arrd-root input:focus-visible,.arrd-tab:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.arrd-glass button:focus-visible,.arrd-glass a:focus-visible{outline-color:var(--yellow);outline-offset:2px}
 .arrd-sec{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:4px}
 .arrd-center{text-align:center;align-items:center}
-.arrd-h{font:900 clamp(30px,8vw,40px)/1 var(--head);font-stretch:125%;text-transform:uppercase;letter-spacing:-.02em;margin:2px 0 0;color:var(--white);text-wrap:balance}
-.arrd-lede{color:var(--muted);margin:0;font-size:15px}
-.arrd-svg{width:min(330px,74vw,40vh);aspect-ratio:1/1;display:block;margin:2px auto 0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.arrd-svg:focus-visible{outline:3px solid var(--yellow);outline-offset:4px;border-radius:50%}
-.arrd-scar{font:500 13px/1.35 var(--sub);text-transform:uppercase;letter-spacing:.07em;color:var(--yellow);margin:0;min-height:1.35em;text-wrap:balance}
+.arrd-h{font:900 clamp(26px,7.4vw,36px)/1 var(--head);font-stretch:125%;text-transform:uppercase;letter-spacing:-.02em;margin:2px 0 0;color:var(--blue);text-wrap:balance}
+.arrd-lede{color:var(--muted);font-size:15px}
+
+/* ---- the thermostat ---- */
+.arrd-dev{position:relative;width:min(350px,84vw,42vh);aspect-ratio:1/1;margin:6px auto 8px;border-radius:22%;padding:1%;background:linear-gradient(135deg,#f9f7f8 0%,#a9bcd6 42%,#5c6672 100%);box-shadow:0 22px 40px -14px rgba(20,40,78,.6),0 6px 12px -4px rgba(20,40,78,.35);transition:width .35s ease}
+.arrd-dev.is-small{width:min(250px,62vw,30vh)}
+.arrd-glass{position:relative;width:100%;height:100%;border-radius:21.4%;background:#221f20;overflow:hidden;container-type:inline-size;color:var(--white);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.arrd-glass::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.1) 0%,rgba(255,255,255,0) 45%),linear-gradient(180deg,rgba(249,247,248,.04) 0%,rgba(34,31,32,0) 50%,rgba(0,0,0,.28) 100%)}
+.arrd-i{display:block;width:100%;height:100%}
+.arrd-face{position:absolute;inset:0;width:100%;height:100%;display:block}
+.arrd-heat{opacity:0;transition:opacity .5s}
+.arrd-dev[data-state="heating"] .arrd-heat{opacity:1}
+.arrd-z,.arrd-root [data-arrd="tag"]{transition:opacity .15s}
+.arrd-dev[data-state="heating"] .arrd-z,.arrd-dev[data-state="won"] .arrd-z{opacity:.28}
+.arrd-dev[data-state] .arrd-z.is-lit{opacity:1}
+.arrd-ly{position:absolute;opacity:0;visibility:hidden;transition:opacity .35s,visibility 0s .35s}
+.arrd-dev[data-state="wake"] .arrd-ly[data-show~="wake"],.arrd-dev[data-state="ready"] .arrd-ly[data-show~="ready"],.arrd-dev[data-state="heating"] .arrd-ly[data-show~="heating"],
+.arrd-dev[data-state="won"] .arrd-ly[data-show~="won"],.arrd-dev[data-state="code"] .arrd-ly[data-show~="code"]{opacity:1;visibility:visible;transition:opacity .35s}
+.arrd-sb{position:absolute;z-index:2;top:5%;left:0;right:0;height:6%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:4cqw}
+.arrd-sb-l{justify-self:end;display:flex;gap:2.6cqw;align-items:center}
+.arrd-sb-l .arrd-i{width:3.6cqw;height:3.6cqw}
+.arrd-sb-l .arrd-i:last-child{color:var(--red)}
+.arrd-pill{display:inline-flex;align-items:center;gap:1.3cqw;height:5.2cqw;padding:0 3.2cqw;border-radius:99px;background:var(--navy);color:var(--white);font:600 11px/1 var(--body);font-size:3cqw;font-variant-numeric:tabular-nums;white-space:nowrap}
+.arrd-pill .arrd-i{width:2.8cqw;height:2.8cqw}
+.arrd-pill.sub,.arrd-pill.heat,.arrd-pill.hold{font-family:var(--sub);letter-spacing:.1em;text-transform:uppercase}
+.arrd-pill.heat{background:var(--red);color:#fff}
+.arrd-pill.hold{background:var(--yellow);color:var(--navy)}
+.arrd-mute{justify-self:start;width:9cqw;height:9cqw;margin:-2cqw 0 -2cqw -2.2cqw;padding:2.4cqw;border:0;border-radius:50%;background:none;color:var(--white);cursor:pointer}
+.arrd-side{z-index:2;top:43%;width:12%;display:flex;flex-direction:column;align-items:center;gap:2.4cqw;text-decoration:none}
+.arrd-side-c{width:12cqw;height:12cqw;border-radius:50%;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;transition:background .15s}
+.arrd-side-c .arrd-i{width:4.2cqw;height:4.2cqw}
+.arrd-side:hover .arrd-side-c{background:var(--blue)}
+.arrd-side-l{font:600 2.5cqw/1 var(--sub);letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.arrd-dev.is-small .arrd-side{display:none}
+.arrd-wx{left:6%;right:6%;top:74.5%;text-align:center;pointer-events:none}
+.arrd-wx1{font:400 11px/1.35 var(--body);font-size:2.9cqw;color:var(--soft);display:flex;justify-content:center;align-items:center;gap:1.6cqw}
+.arrd-wx1 .arrd-i{width:4.2cqw;height:4.2cqw;color:var(--white)}
+.arrd-wx1 b{font-weight:600;font-size:3.6cqw;color:var(--white)}
+.arrd-wx2{font:400 10px/1.4 var(--body);font-size:2.75cqw;color:var(--soft);margin-top:1cqw}
+.arrd-logo{position:absolute;left:41.5%;top:89%;width:17%;height:auto;opacity:.8;pointer-events:none}
+.arrd-wake{inset:14% 6% 14.5%;display:flex;flex-direction:column;align-items:center;text-align:center}
+.arrd-wk-time{font:300 22cqw/1 var(--head);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.arrd-wk-time small{font:600 3.8cqw/1 var(--sub);letter-spacing:.06em;color:var(--soft);vertical-align:top;margin-left:1.6cqw}
+.arrd-wk-date{font:500 3.5cqw/1.3 var(--body);color:var(--soft);margin:2.4cqw 0 4.6cqw!important}
+.arrd-tiles{display:flex;gap:2.6cqw;justify-content:center}
+.arrd-tile{width:26cqw;padding:3cqw 0 2.6cqw;border-radius:4.6cqw;background:rgba(249,247,248,.07);display:flex;flex-direction:column;align-items:center;gap:1.4cqw}
+.arrd-tile .arrd-i{width:4.3cqw;height:4.3cqw}
+.arrd-tile b{font:800 5.8cqw/1 var(--head);font-stretch:112%}
+.arrd-tile span{font:600 2.25cqw/1 var(--sub);letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.arrd-tile.drop .arrd-i{color:var(--lb)}
+.arrd-tile.heat .arrd-i{color:var(--red)}
+.arrd-wk-tap{margin-top:auto!important;border:1.5px solid var(--yellow);color:var(--yellow);border-radius:99px;padding:1.8cqw 5cqw;font:600 2.75cqw/1 var(--sub);letter-spacing:.12em;text-transform:uppercase}
+.arrd-wonly{left:8%;right:8%;top:76%;text-align:center;pointer-events:none}
+.arrd-wonly .k{font:600 3.4cqw/1 var(--sub);letter-spacing:.2em;text-transform:uppercase;color:var(--yellow)}
+.arrd-wonly .s{font:400 2.9cqw/1.35 var(--body);color:var(--soft);margin-top:1.8cqw}
+.arrd-codely{inset:13% 8% 14%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2.4cqw}
+.arrd-codely .t{font:600 4cqw/1 var(--body)}
+.arrd-codely .panel{width:100%;background:var(--navy);border:1.5px solid rgba(3,188,230,.35);border-radius:5cqw;padding:4cqw 3cqw 3.4cqw;margin-top:1.4cqw}
+.arrd-codely .l{font:600 2.6cqw/1 var(--sub);letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
+.arrd-codely .c{font:900 10cqw/1.05 var(--head);white-space:nowrap;font-stretch:112%;color:var(--lb);letter-spacing:.02em;margin:2.2cqw 0 1.6cqw!important;-webkit-user-select:all;user-select:all;cursor:text}
+.arrd-codely .g{font:600 4cqw/1.2 var(--sub);letter-spacing:.08em;text-transform:uppercase;margin-top:2cqw!important}
+.arrd-codely .d{font:400 3cqw/1.3 var(--body);color:var(--soft)}
+
+/* ---- below the thermostat ---- */
+.arrd-scar{font:500 13px/1.35 var(--sub);text-transform:uppercase;letter-spacing:.07em;color:var(--red);min-height:1.35em;text-wrap:balance}
 .arrd-links{display:flex;justify-content:center;align-items:center;gap:6px;color:var(--muted)}
 .arrd-btn{display:flex;justify-content:center;align-items:center;font:600 17px/1 var(--sub);text-transform:uppercase;letter-spacing:.1em;padding:17px 22px;border-radius:10px;text-decoration:none;background:var(--red);color:#fff;border:2px solid var(--red);cursor:pointer;width:100%;margin:0}
 .arrd-btn:hover{filter:brightness(1.06)}
 .arrd-btn[disabled]{opacity:.6;cursor:wait}
-.arrd-btn.ghost{background:transparent;color:var(--white);border-color:rgba(249,247,248,.5)}
+.arrd-btn.ghost{background:transparent;color:var(--navy);border-color:rgba(20,40,78,.45)}
 .arrd-no{background:none;border:0;color:var(--muted);font:500 14px/1.4 var(--body);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px;align-self:center}
-.arrd-call{margin:0;font-size:14px;color:var(--white);text-align:center}
-.arrd-call a{color:var(--lb);font-weight:700;text-decoration:none;white-space:nowrap}
+.arrd-call{font-size:14px;color:var(--black);text-align:center}
+.arrd-call a{color:var(--blue);font-weight:700;text-decoration:none;white-space:nowrap}
 .arrd-link{background:none;border:0;color:var(--muted);font:400 12.5px/1.4 var(--body);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:2px;align-self:center}
-.arrd-odds{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;width:100%}
-.arrd-odds div{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-variant-numeric:tabular-nums}
-.arrd-odds i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:-1px}
+.arrd-odds{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;width:100%;text-align:left}
+.arrd-odds div{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-variant-numeric:tabular-nums;color:var(--black)}
+.arrd-odds i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:-1px;box-shadow:inset 0 0 0 1px rgba(20,40,78,.2)}
 .arrd-odds .off{text-decoration:line-through;opacity:.6}
-.arrd-odds a{color:var(--lb)}
-.arrd-won{font:600 14px/1.3 var(--sub);text-transform:uppercase;letter-spacing:.1em;color:var(--yellow);margin:6px 0 0}
-.arrd-gift{font:900 clamp(26px,7vw,34px)/1.02 var(--head);font-stretch:125%;text-transform:uppercase;letter-spacing:-.02em;color:var(--white);margin:0;text-wrap:balance}
-.arrd-sub{color:var(--muted);margin:0;font-size:15px}
-.arrd-hold{margin:0;font:500 14px/1.4 var(--sub);text-transform:uppercase;letter-spacing:.07em;color:var(--white)}
-.arrd-hold b{color:var(--yellow);font-variant-numeric:tabular-nums;font-weight:600}
+.arrd-odds a{color:var(--blue)}
+.arrd-won{font:600 14px/1.3 var(--sub);text-transform:uppercase;letter-spacing:.1em;color:var(--red)}
+.arrd-gift{font:900 clamp(24px,6.6vw,32px)/1.02 var(--head);font-stretch:125%;text-transform:uppercase;letter-spacing:-.02em;color:var(--blue);text-wrap:balance}
+.arrd-sub{color:var(--muted);font-size:15px}
+.arrd-hold{font:500 14px/1.4 var(--sub);text-transform:uppercase;letter-spacing:.07em;color:var(--navy)}
+.arrd-hold b{color:var(--red);font-variant-numeric:tabular-nums;font-weight:600}
 .arrd-form{display:flex;flex-direction:column;gap:11px;margin:4px 0 0}
 .arrd-field{display:flex;flex-direction:column;gap:5px}
-.arrd-field label{font:600 13.5px/1.3 var(--body);color:var(--white)}
-.arrd-field input{font:400 17px/1.3 var(--body);padding:12px 13px;border-radius:9px;border:2px solid transparent;background:#fff;color:var(--black);width:100%;margin:0;height:auto;box-shadow:none}
-.arrd-field input:focus{outline:none;border-color:var(--lb)}
+.arrd-field label{font:600 13.5px/1.3 var(--body);color:var(--black)}
+.arrd-field input{font:400 17px/1.3 var(--body);padding:12px 13px;border-radius:9px;border:2px solid var(--line);background:#fff;color:var(--black);width:100%;margin:0;height:auto;box-shadow:none}
+.arrd-field input:focus{outline:none;border-color:var(--blue)}
 .arrd-field input[aria-invalid="true"]{border-color:var(--red)}
 .arrd-row{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:10px}
-.arrd-note{margin:0;font-size:14px;color:var(--white)}
+.arrd-note{font-size:14px;color:var(--black)}
 .arrd-check{display:flex;gap:10px;align-items:flex-start;font:400 12.5px/1.45 var(--body);color:var(--muted);cursor:pointer}
-.arrd-check input{width:19px;height:19px;margin:1px 0 0;accent-color:var(--lb);flex:none}
-.arrd-err{color:#ff8a8d;font:600 14px/1.4 var(--body);margin:0}
+.arrd-check input{width:19px;height:19px;margin:1px 0 0;accent-color:var(--blue);flex:none}
+.arrd-err{color:var(--red);font:600 14px/1.4 var(--body)}
 .arrd-err:empty{display:none}
-.arrd-fine{font:400 12px/1.5 var(--body);color:var(--muted);margin:0}
+.arrd-fine{font:400 12px/1.5 var(--body);color:var(--muted)}
 .arrd-fine a{color:var(--muted)}
-.arrd-code{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--gray);border-radius:12px;padding:14px 16px;border:2px dashed #a9bcd6}
-.arrd-code b{font:900 clamp(26px,7vw,32px)/1 var(--head);font-stretch:112%;letter-spacing:.04em;white-space:nowrap;user-select:all;color:var(--black)}
-.arrd-copy{font:600 13px/1 var(--sub);text-transform:uppercase;letter-spacing:.08em;padding:10px 12px;border-radius:8px;border:2px solid var(--blue);background:transparent;color:var(--blue);cursor:pointer}
-.arrd-ok{margin:0;color:var(--lb);font-weight:600;font-size:14px}
+.arrd-copy{align-self:center;font:600 13px/1 var(--sub);text-transform:uppercase;letter-spacing:.08em;padding:10px 16px;border-radius:8px;border:2px solid var(--blue);background:transparent;color:var(--blue);cursor:pointer}
+.arrd-ok{color:var(--blue);font-weight:600;font-size:14px}
 .arrd-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:2147482999;writing-mode:vertical-rl;background:var(--navy);color:var(--white);border:0;border-left:4px solid var(--red);border-radius:10px 0 0 10px;padding:16px 9px;font:600 13px/1 var(--sub);text-transform:uppercase;letter-spacing:.12em;cursor:pointer;box-shadow:0 8px 24px -10px rgba(0,0,0,.5)}
 @media (max-width:640px){.arrd-tab{padding:13px 7px;font-size:12px}}
-@media (prefers-reduced-motion:reduce){.arrd-sheet{animation:none!important}}
+@media (prefers-reduced-motion:reduce){.arrd-sheet{animation:none!important}.arrd-dev,.arrd-ly,.arrd-z,.arrd-heat{transition:none!important}}
 `;
 
 /* ---------------- markup ---------------- */
@@ -188,14 +279,42 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const MARKUP = `
 <div class="arrd-sheet" role="dialog" aria-modal="true" aria-labelledby="arrd-title">
   <div class="arrd-head">
-    <img class="arrd-logo" src="${esc(CFG.logoUrl)}" alt="Always Ready Repair">
+    <p class="arrd-brand"><b>ARR Heating + Cooling</b> · Since 1935</p>
     <button class="arrd-x" type="button" aria-label="Close" data-arrd="close">×</button>
   </div>
-  <section class="arrd-sec arrd-center" data-arrd="play">
+  <div class="arrd-sec arrd-center" data-arrd="playTop">
     <h2 class="arrd-h" id="arrd-title">Turn the dial</h2>
     <p class="arrd-lede">Every turn wins a real gift. Odds are posted.</p>
-    <svg class="arrd-svg" data-arrd="svg" viewBox="-172 -172 344 344" role="img" tabindex="0" aria-label="Comfort Dial thermostat with gifts on a 50 to 90 degree scale. Press Turn the dial.">${svgInner()}
-    </svg>
+  </div>
+  <div class="arrd-dev" data-arrd="dev" data-state="ready">
+    <div class="arrd-glass" data-arrd="glass">
+      <svg class="arrd-face arrd-ly" data-show="ready heating won" data-arrd="svg" viewBox="${VIEWBOX}" role="img" aria-label="Comfort Dial thermostat with gifts on a 50 to 90 degree scale. Each gift's slice is sized by its odds. Press Turn the dial.">${svgInner()}
+      </svg>
+      <div class="arrd-sb">
+        <span class="arrd-sb-l">${icon('wifi')}${icon('flame')}</span>
+        <span class="arrd-pill" data-arrd="pill"></span>
+        <button class="arrd-mute" type="button" data-arrd="mute" aria-pressed="false" aria-label="Mute the dial's sounds">${icon('sound')}</button>
+      </div>
+      <a class="arrd-side arrd-ly" data-show="ready heating won" style="left:4%" href="${esc(DIAL.bookUrl)}" data-arrd="book" aria-label="Book online"><span class="arrd-side-c">${icon('cal')}</span><span class="arrd-side-l" aria-hidden="true">Book</span></a>
+      <a class="arrd-side arrd-ly" data-show="ready heating won" style="right:4%" href="tel:${TEL}" data-arrd="call" aria-label="Call ${esc(DIAL.phone)}"><span class="arrd-side-c">${icon('phone')}</span><span class="arrd-side-l" aria-hidden="true">Call</span></a>
+      <div class="arrd-wx arrd-ly" data-show="ready heating"><p class="arrd-wx1" data-arrd="wx1"></p><p class="arrd-wx2" data-arrd="wx2"></p></div>
+      <div class="arrd-wake arrd-ly" data-show="wake">
+        <p class="arrd-wk-time"><span data-arrd="wkTime"></span><small data-arrd="wkAmpm"></small></p>
+        <p class="arrd-wk-date" data-arrd="wkDate"></p>
+        <div class="arrd-tiles" data-arrd="tiles"></div>
+        <p class="arrd-wk-tap">Tap to turn the dial</p>
+      </div>
+      <div class="arrd-wonly arrd-ly" data-show="won"><p class="k">You won</p><p class="s">Held for you. Add your number to claim it.</p></div>
+      <div class="arrd-codely arrd-ly" data-show="code">
+        <p class="t">Your code</p>
+        <div class="panel"><p class="l">Gift code</p><p class="c" data-arrd="code"></p><p class="l">Give it when you book</p></div>
+        <p class="g" data-arrd="codeGift"></p>
+        <p class="d" data-arrd="codeDate"></p>
+      </div>
+      <img class="arrd-logo" src="${esc(CFG.logoUrl)}" alt="" aria-hidden="true">
+    </div>
+  </div>
+  <section class="arrd-sec arrd-center" data-arrd="play">
     <p class="arrd-scar" data-arrd="scar" aria-live="polite"></p>
     <p class="arrd-err" data-arrd="playErr" role="alert"></p>
     <button class="arrd-btn" type="button" data-arrd="turn">Turn the dial</button>
@@ -209,43 +328,104 @@ const MARKUP = `
   <section class="arrd-sec" data-arrd="msg" hidden></section>
 </div>`;
 
-/* ---------------- dial geometry (face.js draws it) ---------------- */
+/* ---------------- the dial (face.js draws it, on a 400-wide face) ---------------- */
 let root, tab, $, segs = [], ang = fToAng(68), lastF = null, busy = false, memOpen = true, isOpen = false, lastFocus = null, ac = null;
-let statusLoaded = false, clock = null, paused = false;
+let statusLoaded = false, clock = null, uiClock = null, wakeTimer = null, WX = null, muted = !!saved.muted, paused = false;
 const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function buildRing() { drawRing($('ring')); }
+/* The free year sits raised as the top prize while this month's is open, and reads GONE / TAKEN once it's claimed. */
 function buildFace() {
-  segs = drawFace($('face'), DIAL.zones, GIFTS, memOpen ? null : MEM);
+  segs = drawFace($('face'), DIAL.zones, GIFTS, { closedId: memOpen ? null : MEM, topId: memOpen ? MEM : null, tag: $('tag') });
   setAng(ang, false);
+  if (/^(heating|won)$/.test($('dev').dataset.state)) light(zoneAt(ang));   // rebuilt mid-turn or on the claim screen
 }
-function setHub(main, sub, lbl) {
-  $('hubMain').textContent = main;
-  const s = $('hubSub'); s.textContent = sub; s.setAttribute('font-size', sub.length > 15 ? 8.6 : sub.length > 11 ? 9.6 : 10.5);
-  if (lbl) $('hubLabel').textContent = lbl;
+/* The white disc: SET TO / temperature / the gift under the pointer, or the gift's value after a win. */
+function setHub(lbl, main, sub, kind) {
+  const won = kind === 'won', M = $('hubMain'), S = $('hubSub');
+  $('hubLabel').textContent = lbl;
+  M.textContent = main; M.setAttribute('y', won ? 8 : 13); M.setAttribute('font-size', won ? 40 : 36);
+  S.textContent = sub; S.setAttribute('y', won ? 31 : 35);
+  S.setAttribute('fill', kind === 'cta' ? '#ee292f' : won ? '#5c6672' : '#084e91');
+  S.setAttribute('letter-spacing', won ? 1.6 : 1);
+  S.setAttribute('font-size', hubSize(sub, won ? 11.5 : 12.5).toFixed(1));
 }
+const readyHub = () => setHub('SET TO', `${Math.round(angToF(ang))}°`, 'TAP TO TURN', 'cta');
+function wonHub(gift) { setHub('', `$${gift.value}`, gift.short.replace(/^\$\d+\s*/, ''), 'won'); }
 const zoneAt = (a) => { a = Math.max(A0, Math.min(A1 - 0.001, a)); return segs.find((s) => a >= s.a0 && a < s.a1) || segs[0]; };
+function light(seg) {
+  segs.forEach((s) => s.g.classList.toggle('is-lit', s === seg));
+  $('tag').style.opacity = seg && seg.gift.id !== MEM ? 0.28 : 1;   // the tag dims with its slice
+}
 function setAng(a, live) {
   ang = a;
-  $('ring').setAttribute('transform', `rotate(${a})`);
   $('marker').setAttribute('transform', `rotate(${a})`);
   if (live) {
-    const f = Math.round(angToF(a));
+    const f = Math.round(angToF(a)), seg = zoneAt(a);
     if (f !== lastF) { lastF = f; tick(1400 + (f - 50) * 12); }
-    setHub(`${f}°`, zoneAt(a).gift.short, 'SET TO');
+    light(seg);
+    setHub('SET TO', `${f}°`, seg.gift.short, 'gift');
   }
 }
+/** Somewhere inside one of the gift's slices, never on an edge, so the readout always names the gift it shows. */
+function targetFor(giftId) {
+  const mine = segs.filter((s) => s.gift.id === giftId), tot = mine.reduce((n, s) => n + (s.a1 - s.a0), 0);
+  let r = Math.random() * tot, s = mine[0];
+  for (const x of mine) { if ((r -= x.a1 - x.a0) < 0) { s = x; break; } }
+  return s.a0 + (s.a1 - s.a0) * (0.25 + Math.random() * 0.5);
+}
 
-/* ---------------- sound: quiet thermostat clicks, only after the visitor's own tap ---------------- */
-function audio() { try { ac = ac || new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)(); } catch (e) { ac = null; } return ac; }
+/* ---------------- the screen: wake → ready → heating → won → code ---------------- */
+const fmtTime = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const shortDate = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
+const longDate = (d) => d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+function devState(s) {
+  $('dev').dataset.state = s;
+  const p = $('pill');
+  if (s === 'heating') { p.className = 'arrd-pill heat'; p.innerHTML = `${icon('flame')}Heating`; }
+  else if (s === 'won') { p.className = 'arrd-pill hold'; p.innerHTML = `${icon('clock')}Hold <span data-arrd="clock">${DIAL.holdMinutes}:00</span>`; }
+  else if (s === 'wake') { p.className = 'arrd-pill sub'; p.textContent = `Heat ${Math.round(angToF(ang))}°`; }
+  else { p.className = 'arrd-pill'; p.textContent = fmtTime(new Date()).split(' ')[0]; }
+}
+function paintClock() {
+  const d = new Date(), [hm, ampm] = fmtTime(d).split(' ');
+  $('wkTime').textContent = hm; $('wkAmpm').textContent = ampm || '';
+  $('wkDate').textContent = longDate(d);
+  const st = $('dev').dataset.state;
+  if (st === 'ready' || st === 'code') $('pill').textContent = hm;
+  renderWeather();
+}
+function renderWeather() {
+  const d = new Date(), w = WX;
+  if (w) {
+    $('wx1').innerHTML = `${icon(w.icon)}<b>${w.tempF}°F</b>${w.text ? `<span>${esc(w.text)}</span>` : ''}`;
+    $('wx2').textContent = [w.humidity != null ? `Humidity ${w.humidity}%` : '', shortDate(d), w.place || ''].filter(Boolean).join(' · ');
+  } else { $('wx1').textContent = longDate(d); $('wx2').textContent = ''; }
+  const tiles = [];
+  if (w) tiles.push(['cloud', `${w.tempF}°`, 'Outside', w.icon]);
+  if (w && w.humidity != null) tiles.push(['drop', `${w.humidity}%`, 'Humidity', 'drop']);
+  tiles.push(['heat', `${Math.round(angToF(ang))}°`, 'Heat set', 'flame']);
+  $('tiles').innerHTML = tiles.map(([cls, v, l, ic]) => `<div class="arrd-tile ${cls}">${icon(ic)}<b>${v}</b><span>${l}</span></div>`).join('');
+}
+let wxReq = null;
+function loadWeather() {
+  wxReq ||= api('weather').then((w) => { if (w && w.ok && Number.isFinite(w.tempF)) { WX = w; renderWeather(); } }).catch(() => { wxReq = null; });
+}
+function setMuted(m) {
+  muted = m; store.set({ muted: m });
+  const b = $('mute'); b.setAttribute('aria-pressed', String(m)); b.innerHTML = icon(m ? 'mute' : 'sound');
+}
+
+/* ---------------- sound: quiet thermostat clicks, only after the visitor's own tap, and never when muted ---------------- */
+function audio() { if (muted) return null; try { ac = ac || new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)(); } catch (e) { ac = null; } return ac; }
 function tick(freq) {
-  const c = ac; if (!c) return;
+  const c = ac; if (!c || muted) return;
   try { const o = c.createOscillator(), g = c.createGain(); o.type = 'square'; o.frequency.value = freq;
     g.gain.setValueAtTime(0.035, c.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.03);
     o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.035); } catch (e) {}
 }
 function chime() {
-  const c = ac; if (!c) return;
+  const c = ac; if (!c || muted) return;
   try { [660, 880, 1320].forEach((f, i) => { const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + i * 0.09;
     o.type = 'triangle'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.08, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
     o.connect(g).connect(c.destination); o.start(t); o.stop(t + 0.4); }); } catch (e) {}
@@ -259,11 +439,8 @@ const tween = (from, to, dur, ease) => new Promise((res) => {
   (function f(now) { const k = Math.min(1, (now - t0) / dur); setAng(from + (to - from) * ease(k), true); k < 1 ? requestAnimationFrame(f) : res(); })(t0);
 });
 async function turnTo(giftId) {
-  const mine = segs.filter((s) => s.gift.id === giftId), tot = mine.reduce((n, s) => n + (s.a1 - s.a0), 0);
-  if (!mine.length) return;
-  let r = Math.random() * tot, s = mine[0];
-  for (const x of mine) { if ((r -= x.a1 - x.a0) < 0) { s = x; break; } }
-  const target = s.a0 + (s.a1 - s.a0) * (0.25 + Math.random() * 0.5);
+  if (!segs.some((s) => s.gift.id === giftId)) return;
+  const target = targetFor(giftId);
   if (reduce()) { await tween(ang, target, 450, easeIO); return; }
   await tween(ang, A1, 280 + (A1 - ang) * 3, easeIO);
   await tween(A1, A0, 1100, easeIO);
@@ -341,22 +518,30 @@ async function loadStatus() {
 /* ---------------- screens ---------------- */
 function show(name) {
   ['play', 'claim', 'done', 'msg'].forEach((k) => { $(k).hidden = k !== name; });
+  $('playTop').hidden = name !== 'play';
+  $('dev').hidden = name === 'msg';
+  $('dev').classList.toggle('is-small', name === 'claim' || name === 'done');
   if (name !== 'claim') stopClock();
+  if (name !== 'play') clearTimeout(wakeTimer);
   $('sheet').scrollTop = 0;
 }
 function focusFirst(sel) { setTimeout(() => { const n = root.querySelector(sel); if (n) n.focus(); }, 60); }
 
-function showPlay() {
+/* The screen wakes on the time and weather, then shows the dial. A tap while it's waking turns it right away. */
+function showPlay(wake) {
   show('play');
   const b = $('turn'); b.disabled = false; b.textContent = 'Turn the dial';
   $('playErr').textContent = '';
-  setHub(`${Math.round(angToF(ang))}°`, 'TAP TO TURN', 'SET TO');
+  light(null); readyHub();
+  clearTimeout(wakeTimer);
+  if (wake) { devState('wake'); wakeTimer = setTimeout(() => { if ($('dev').dataset.state === 'wake') devState('ready'); }, 1800); }
+  else devState('ready');
 }
 
 function showMsg(title, text, action) {
   show('msg');
   const m = $('msg');
-  m.innerHTML = `<p class="arrd-won">${esc(title)}</p><p class="arrd-sub" style="color:#f9f7f8">${esc(text)}</p>
+  m.innerHTML = `<p class="arrd-won">${esc(title)}</p><p class="arrd-sub" style="color:#221f20">${esc(text)}</p>
     ${action ? `<button class="arrd-btn" type="button" data-arrd="msgAct">${esc(action.label)}</button>` : ''}
     <a class="arrd-btn ghost" href="tel:${TEL}" data-arrd="call">Call ${esc(DIAL.phone)}</a>
     <button class="arrd-no" type="button" data-arrd="close">Back to the site</button>`;
@@ -369,8 +554,8 @@ function startClock(heldUntil) {
   stopClock();
   const end = new Date(heldUntil).getTime();
   const draw = () => {
-    const left = end - Date.now(), c = root.querySelector('[data-arrd="clock"]');
-    if (c) c.textContent = fmtClock(left);
+    const left = end - Date.now();
+    root.querySelectorAll('[data-arrd="clock"]').forEach((c) => { c.textContent = fmtClock(left); });
     if (left <= 0) { stopClock(); if (!busy) holdExpired(); }
   };
   draw(); clock = setInterval(draw, 1000);
@@ -378,12 +563,15 @@ function startClock(heldUntil) {
 function holdExpired() {
   store.set({ hold: null });
   track('dial_hold_expired');
-  showMsg('Your hold ran out', `We held your gift for ${DIAL.holdMinutes} minutes. Turn again for a new one.`, { label: 'Turn again', run: showPlay });
+  showMsg('Your hold ran out', `We held your gift for ${DIAL.holdMinutes} minutes. Turn again for a new one.`, { label: 'Turn again', run: () => showPlay(false) });
 }
 
 function showClaim(hold) {
   show('claim');
   const g = GIFTS[hold.gift.id] || hold.gift, isMem = hold.gift.id === MEM;
+  if (isMem && !memOpen) { memOpen = true; buildFace(); renderOdds(); }   // their own hold is what took it off the board
+  if (zoneAt(ang).gift.id !== g.id && segs.some((s) => s.gift.id === g.id)) setAng(targetFor(g.id), false);   // reopened: put the pointer back on the gift
+  devState('won'); light(zoneAt(ang)); wonHub(g);
   const c = $('claim');
   c.innerHTML = `
     <p class="arrd-won">You won</p>
@@ -410,14 +598,18 @@ function showClaim(hold) {
 function showDone(won, returning) {
   show('done');
   const g = GIFTS[won.gift.id] || won.gift, d = $('done');
+  devState('code');
+  $('code').textContent = won.code;
+  $('codeGift').textContent = g.short;
+  $('codeDate').textContent = `Good through ${won.expiresOn}`;
   d.innerHTML = `
     <p class="arrd-won">${returning ? 'Your gift' : 'You\'re set'}</p>
     <p class="arrd-gift">${esc(g.name)}</p>
-    <div class="arrd-code"><b data-arrd="code">${esc(won.code)}</b><button class="arrd-copy" type="button" data-arrd="copy">Copy</button></div>
-    <p class="arrd-sub" style="color:#f9f7f8">Good through ${esc(won.expiresOn)}. Give this code when you book. It's tied to your phone number${returning ? '' : ', and we just texted it to you'}.</p>
+    <button class="arrd-copy" type="button" data-arrd="copy">Copy code ${esc(won.code)}</button>
+    <p class="arrd-sub" style="color:#221f20">Good through ${esc(won.expiresOn)}. Give this code when you book. It's tied to your phone number${returning ? '' : ', and we just texted it to you'}.</p>
     <a class="arrd-btn" href="tel:${TEL}" data-arrd="call">Call to book</a>
     <a class="arrd-btn ghost" href="${esc(DIAL.bookUrl)}" data-arrd="book">Book online</a>
-    ${won.hasAddress ? '' : `<button class="arrd-link" type="button" data-arrd="detailsBtn" style="font-size:14px;color:#f9f7f8">Add your address so we can book you faster</button>
+    ${won.hasAddress ? '' : `<button class="arrd-link" type="button" data-arrd="detailsBtn" style="font-size:14px;color:#221f20">Add your address so we can book you faster</button>
     <form class="arrd-form" data-arrd="detailsForm" novalidate hidden>
       <div class="arrd-field"><label for="arrd-first">First name</label><input id="arrd-first" name="firstName" autocomplete="given-name" maxlength="30"></div>
       <div class="arrd-row">
@@ -429,14 +621,13 @@ function showDone(won, returning) {
     </form>`}
     <button class="arrd-no" type="button" data-arrd="close">Back to the site</button>`;
   d.querySelector('[data-arrd="copy"]').addEventListener('click', (e) => {
-    const b = e.currentTarget, done = () => { b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1600); };
-    const sel = () => { const rg = document.createRange(); rg.selectNodeContents(d.querySelector('[data-arrd="code"]')); const s = getSelection(); s.removeAllRanges(); s.addRange(rg); };
+    const b = e.currentTarget, label0 = b.textContent, done = () => { b.textContent = 'Copied'; setTimeout(() => { b.textContent = label0; }, 1600); };
+    const sel = () => { const rg = document.createRange(); rg.selectNodeContents($('code')); const s = getSelection(); s.removeAllRanges(); s.addRange(rg); };
     try { navigator.clipboard.writeText(won.code).then(done, sel); } catch (err) { sel(); }
   });
   const btn = d.querySelector('[data-arrd="detailsBtn"]'), form = d.querySelector('[data-arrd="detailsForm"]');
   if (btn) btn.addEventListener('click', () => { btn.hidden = true; form.hidden = false; focusFirst('#arrd-first'); });
   if (form) form.addEventListener('submit', (e) => saveDetails(e, won, form));
-  setHub('✓', g.short, 'YOUR GIFT');
 }
 
 /* ---------------- actions ---------------- */
@@ -444,7 +635,9 @@ async function turn() {
   if (busy) return;
   audio();   // unlock sound inside the tap
   busy = true;
+  clearTimeout(wakeTimer);
   const b = $('turn'); b.disabled = true; b.textContent = 'Turning…'; $('playErr').textContent = '';
+  devState('heating');
   track('dial_turn_pressed');
   let res;
   try {
@@ -452,6 +645,7 @@ async function turn() {
   } catch (e) { res = { error: `We couldn't reach the dial. Check your connection, or call ${DIAL.phone}.` }; }
   if (!res.ok) {
     busy = false; b.disabled = false; b.textContent = 'Turn the dial';
+    devState('ready'); light(null); readyHub();
     if (res.reason === 'limit') showMsg('That\'s all for today', res.error);
     else $('playErr').textContent = res.error || `Something went wrong on our end. Call ${DIAL.phone}.`;
     return;
@@ -460,11 +654,12 @@ async function turn() {
   if (!segs.some((x) => x.gift.id === res.gift.id)) { statusReq = null; await getStatus(); }   // the config changed since the dial was drawn
   await turnTo(res.gift.id);
   chime();
+  devState('won'); wonHub(GIFTS[res.gift.id] || res.gift); b.textContent = 'You won';
   const hold = { turn: res.turn, gift: res.gift, heldUntil: res.heldUntil };
   store.set({ hold });
   track('dial_turned', { gift: res.gift.id });
   busy = false;
-  setTimeout(() => showClaim(hold), reduce() ? 0 : 450);
+  setTimeout(() => showClaim(hold), reduce() ? 0 : 900);
 }
 
 function fieldError(scope, field, msg) {
@@ -491,7 +686,7 @@ async function claim(e, hold) {
   if (!res.ok) {
     if (['expired', 'no_turn', 'household'].includes(res.reason)) {
       store.set({ hold: null });
-      showMsg(res.reason === 'household' ? 'One free year per home' : 'Your hold ran out', res.error, { label: 'Turn again', run: showPlay });
+      showMsg(res.reason === 'household' ? 'One free year per home' : 'Your hold ran out', res.error, { label: 'Turn again', run: () => showPlay(false) });
     } else if (res.reason === 'limit') showMsg('That\'s all for today', res.error);
     else fieldError(f, res.field, res.error || `Something went wrong on our end. Call ${DIAL.phone}.`);
     return;
@@ -525,7 +720,10 @@ async function saveDetails(e, won, form) {
 }
 
 /* ---------------- open / close ---------------- */
-function focusables() { return [...root.querySelectorAll('button:not([disabled]),a[href],input,[tabindex="0"]')].filter((n) => !n.closest('[hidden]') && n.offsetParent !== null); }
+function focusables() {
+  return [...root.querySelectorAll('button:not([disabled]),a[href],input')]
+    .filter((n) => !n.closest('[hidden]') && n.offsetParent !== null && getComputedStyle(n).visibility !== 'hidden');
+}
 function onKey(e) {
   if (e.key === 'Escape') { close(); return; }
   if (e.key === 'Tab') {
@@ -544,16 +742,18 @@ function open(trigger = 'button') {
   root.hidden = false; document.documentElement.classList.add('arrd-open'); tab.hidden = true;
   document.addEventListener('keydown', onKey);
   store.set({ seenAt: Date.now() });
+  paintClock(); uiClock = setInterval(paintClock, 15000);
   const s = store.get();
   if (live(s.won)) showDone(s.won, true);
   else if (live(s.hold)) showClaim(s.hold);
-  else { showPlay(); focusFirst('[data-arrd="turn"]'); }
-  loadStatus();
+  else { showPlay(true); focusFirst('[data-arrd="turn"]'); }
+  loadStatus(); loadWeather();
   track('dial_opened', { trigger });
 }
 function close() {
   if (!root || !isOpen || busy) return;
   isOpen = false; root.hidden = true; stopClock();
+  clearInterval(uiClock); clearTimeout(wakeTimer);
   document.documentElement.classList.remove('arrd-open');
   document.removeEventListener('keydown', onKey);
   track('dial_closed');
@@ -575,7 +775,7 @@ function updateTab() {
 function loadFonts() {
   if (document.querySelector('link[data-arrd-fonts]')) return;
   const l = document.createElement('link'); l.rel = 'stylesheet'; l.dataset.arrdFonts = '1';
-  l.href = 'https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,700..900&family=Oswald:wght@500;600&family=Inter:wght@400;500;600;700&display=swap';
+  l.href = 'https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,300..900&family=Oswald:wght@500;600&family=Inter:wght@400;500;600;700&display=swap';
   document.head.appendChild(l);
 }
 
@@ -588,7 +788,7 @@ function mount() {
   tab.addEventListener('click', () => open('tab'));
   document.body.appendChild(tab);
   $ = (k) => (k === 'sheet' ? root.querySelector('.arrd-sheet') : root.querySelector(`[data-arrd="${k}"]`));
-  buildRing(); buildFace(); renderOdds();
+  buildFace(); renderOdds(); renderWeather(); setMuted(muted);
   root.addEventListener('click', (e) => {
     if (e.target === root) { close(); return; }
     if (e.target.closest('[data-arrd="close"]')) { if (e.target.closest('.arrd-no')) track('dial_no_thanks'); close(); }
@@ -596,8 +796,12 @@ function mount() {
     if (e.target.closest('[data-arrd="book"]')) track('dial_book_clicked');
   });
   $('turn').addEventListener('click', turn);
-  $('svg').addEventListener('click', () => { if (!$('play').hidden) turn(); });
-  $('svg').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && !$('play').hidden) { e.preventDefault(); turn(); } });
+  $('glass').addEventListener('click', (e) => {
+    if (e.target.closest('a,button') || $('play').hidden) return;
+    const st = $('dev').dataset.state;
+    if (st === 'wake' || st === 'ready') turn();
+  });
+  $('mute').addEventListener('click', () => setMuted(!muted));
   $('oddsBtn').addEventListener('click', () => {
     const o = $('odds'); o.hidden = !o.hidden;
     $('oddsBtn').setAttribute('aria-expanded', String(!o.hidden));

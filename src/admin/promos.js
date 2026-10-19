@@ -2,7 +2,7 @@
  * popup draws it (src/widget/face.js). The list is drawn once and patched as you type, so inputs keep focus; the
  * preview, totals, odds table, dial order and checks redraw on every change. */
 import { validateConfig, oddsInPlay, activeGifts } from '../lib/rules.js';
-import { svgInner, buildRing, drawFace, fToAng } from '../widget/face.js';
+import { svgInner, drawFace, fToAng, hubSize, VIEWBOX } from '../widget/face.js';
 import { S, edit, on } from './store.js';
 import { esc, $, $$, fmtPct } from './ui.js';
 
@@ -35,7 +35,7 @@ export function render(main) {
       <aside class="side">
         <div class="dialbox">
           <div class="label">Preview · what visitors see</div>
-          <svg id="pv" viewBox="-172 -172 344 344" role="img" aria-label="Preview of the dial">${svgInner('adm')}</svg>
+          <svg id="pv" viewBox="${VIEWBOX}" role="img" aria-label="Preview of the dial">${svgInner('adm')}</svg>
           <div id="total"></div>
           <div class="odds" id="odds"></div>
           <div class="order"><div class="label">Dial order, cool → heat</div><ol id="order"></ol></div>
@@ -43,10 +43,7 @@ export function render(main) {
         <div class="checks" id="checks"></div>
       </aside>
     </div>`;
-  buildRing($('#pv [data-arrd="ring"]'), 'adm');
-  const a = fToAng(68);
-  $('#pv [data-arrd="ring"]').setAttribute('transform', `rotate(${a})`);
-  $('#pv [data-arrd="marker"]').setAttribute('transform', `rotate(${a})`);
+  $('#pv [data-arrd="marker"]').setAttribute('transform', `rotate(${fToAng(68)})`);
   drawList();
   drawSide();
   main.querySelector('[data-act="add"]').addEventListener('click', addGift);
@@ -177,13 +174,13 @@ function drawSide() {
   if (!root || !$('#pv', root)) return;
   const d = S.draft;
   const byId = Object.fromEntries(d.gifts.map((g) => [g.id, g]));
-  drawFace($('#pv [data-arrd="face"]'), d.zones, byId, null, 'adm');
+  const on = activeGifts(d), M = d.membership.giftId, memOn = on.some((g) => g.id === M);
+  drawFace($('#pv [data-arrd="face"]'), d.zones, byId, { topId: memOn ? M : null, ids: 'adm', tag: $('#pv [data-arrd="tag"]') });
 
-  const on = activeGifts(d), total = Math.round(on.reduce((s, g) => s + (+g.weight || 0), 0) * 100) / 100;
+  const total = Math.round(on.reduce((s, g) => s + (+g.weight || 0), 0) * 100) / 100;
   const ok = Math.abs(total - 100) < 0.005;
   $('#total').innerHTML = `<div class="total ${ok ? 'ok' : 'bad'}"><span>Total odds</span><span class="num">${pctOf(total)}${ok ? ' ✓' : total < 100 ? ` · ${pctOf(100 - total)} left to give` : ` · ${pctOf(total - 100)} too much`}</span></div>`;
 
-  const M = d.membership.giftId, memOn = on.some((g) => g.id === M);
   const without = oddsInPlay(d, false);
   $('#odds').innerHTML = `<div class="head2"><span>Promo</span><span>${memOn ? 'Odds · free year gone' : 'Odds'}</span></div>` + on.map((g) => `
     <div><span><i class="swatch" style="background:${esc(g.fill)}"></i><span>${esc(g.name)}</span></span>
@@ -214,8 +211,7 @@ function pointAt(i) {
   for (const z of S.draft.zones) { const span = z.pct / 100 * 270; if (z.gift === g.id && at === null) at = a + span / 2; a += span; }
   if (at === null) return;
   $('[data-arrd="marker"]', pv).setAttribute('transform', `rotate(${at})`);
-  $('[data-arrd="ring"]', pv).setAttribute('transform', `rotate(${at})`);
   $('[data-arrd="hubMain"]', pv).textContent = `${Math.round(50 + (at + 135) / 270 * 40)}°`;
   const sub = $('[data-arrd="hubSub"]', pv);
-  sub.textContent = g.short; sub.setAttribute('font-size', g.short.length > 15 ? 8.6 : g.short.length > 11 ? 9.6 : 10.5);
+  sub.textContent = g.short; sub.setAttribute('font-size', hubSize(g.short).toFixed(1)); sub.setAttribute('fill', '#084e91');
 }
