@@ -2,11 +2,12 @@
  * compare-and-set updates, so tests of the service logic exercise the same rules production enforces.
  * The admin half (AdminDb) mirrors the tables and the comfort_dial_stats function in the admin migration. */
 import { codeStatus, parseSearch } from './db.ts';
-import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, Home, InsertResult, Membership, NewEntry, Stats, Turn } from './db.ts';
+import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, Home, InsertResult, Membership, NewEntry, OAuthToken, Stats, Turn } from './db.ts';
 import { chicagoDay } from './rules.js';
 
 type MemoryDb = DialDb & AdminDb & {
   turns: Turn[]; entries: Entry[]; memberships: Membership[]; configs: ConfigVersion[]; adminRows: Admin[]; auditRows: AuditRow[];
+  oauthRows: OAuthToken[];
 };
 
 export type MemorySeed = {
@@ -23,13 +24,14 @@ export function memoryDb(seed: MemorySeed = {}): MemoryDb {
   const configs: ConfigVersion[] = [];
   const adminRows: Admin[] = [...(seed.admins || [])];
   const auditRows: AuditRow[] = [];
+  const oauthRows: OAuthToken[] = [];
   const properties = seed.properties || {};
   const after = (iso: string, since: Date) => new Date(iso) >= since;
   const within = (iso: string | null | undefined, since: Date, until: Date) => !!iso && new Date(iso) >= since && new Date(iso) < until;
   const copy = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 
   return {
-    turns, entries, memberships, configs, adminRows, auditRows,
+    turns, entries, memberships, configs, adminRows, auditRows, oauthRows,
     async countTurns(since, by) {
       return turns.filter((t) => after(t.created_at, since) && (by.ip ? t.ip === by.ip : true) && (by.device ? t.device === by.device : true)).length;
     },
@@ -91,6 +93,11 @@ export function memoryDb(seed: MemorySeed = {}): MemoryDb {
     async homeProfile(key) { const h = seed.homes?.[key]; return h ? { ...h } : null; },
     async entriesAtAddress(key) { return entries.filter((e) => e.address_key === key).sort((a, b) => b.created_at.localeCompare(a.created_at)).map((e) => ({ ...e })); },
     async serviceZips() { return (seed.serviceZips || []).map((z) => ({ ...z })); },
+    async oauthToken(provider) { const t = oauthRows.find((x) => x.provider === provider); return t ? { ...t } : null; },
+    async saveOAuthToken(t) {
+      const i = oauthRows.findIndex((x) => x.provider === t.provider);
+      if (i >= 0) oauthRows[i] = { ...t }; else oauthRows.push({ ...t });
+    },
 
     async latestConfig() { return configs.length ? copy(configs.reduce((a, b) => (b.version > a.version ? b : a))) : null; },
     async configVersion(v) { const c = configs.find((x) => x.version === v); return c ? copy(c) : null; },
