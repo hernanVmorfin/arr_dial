@@ -1,11 +1,14 @@
 import type { APIRoute } from 'astro';
 import { takeTurn } from '../../lib/dial.ts';
-import { configFor, dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
+import { cfOf, configFor, dbFor, envOf, ipLimitsOn, serviceZipsFor } from '../../lib/runtime.ts';
+import { cleanContext, geoFrom } from '../../lib/visit.js';
 import { envVar } from '../../lib/env.ts';
 import { verifyTurnstile } from '../../lib/turnstile.ts';
 import { clientIp, json, preflight, readJson } from '../../lib/http.ts';
 
-/* POST /api/turn { device, token } → { ok, turn, heldUntil, holdSeconds, gift }
+/* POST /api/turn { device, token, context } → { ok, turn, heldUntil, holdSeconds, gift }
+ * `context` is the visit the popup recorded (lib/visit.js); the server adds the rough place from the IP. It is stored
+ * with the turn and follows the code if they claim. Never echoed back.
  * Picks the gift here, never in the browser, by the live config's odds, and holds it for holdMinutes. `turn` is the
  * claim token. 503 reason:'paused' while the dial is switched off in the admin. */
 export const POST: APIRoute = async (ctx) => {
@@ -25,7 +28,10 @@ export const POST: APIRoute = async (ctx) => {
   const device = typeof body.device === 'string' && /^[\w-]{8,64}$/.test(body.device) ? body.device : null;
 
   try {
-    const res = await takeTurn(db, DIAL, { ip, device, ipLimits: ipLimitsOn(env) });
+    const geo = geoFrom(cfOf(locals, request), await serviceZipsFor(db));
+    const visit = cleanContext(body.context);
+    const context = visit || geo ? { ...(visit || {}), ...(geo ? { geo } : {}) } : null;
+    const res = await takeTurn(db, DIAL, { ip, device, ipLimits: ipLimitsOn(env), context });
     if (!res.ok) return json(request, { error: res.error, reason: res.reason }, res.status);
     const { turn, gift } = res;
     return json(request, {

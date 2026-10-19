@@ -22,6 +22,8 @@ export function dbFor(env: unknown): Db | null {
   if (import.meta.env.DEV) {
     return (devDb ||= memoryDb({
       properties: { '14532 S RAVINIA AVE|60462': 'dev:14532-ravinia' },
+      homes: { '14532 S RAVINIA AVE|60462': { propertyKey: 'dev:14532-ravinia', county: 'Cook', township: 'Orland', yearBuilt: 1978, sqft: 1840, stories: '2', style: '2-story frame/brick', heating: 'Hot Water Steam', centralAir: false, basement: 'Full', basementFinish: 'Unfinished' } },
+      serviceZips: ['60643', '60655', '60805', '60453', '60463', '60464', '60462', '60467', '60477', '60487', '60439', '60491', '60448', '60423'].map((zip) => ({ zip, name: zip })),
       admins: [{ email: DEV_ADMIN.email, name: DEV_ADMIN.name, created_at: new Date().toISOString(), created_by: 'dev' }]
     }));
   }
@@ -34,6 +36,21 @@ export function authFor(env: unknown): PasswordAuth | null {
   if (import.meta.env.DEV) return (devAuth ||= memoryAuth({ [DEV_ADMIN.email]: DEV_ADMIN.password }));
   return null;
 }
+
+/** ARR's ZIPs (service_area_zips), kept per isolate for 10 minutes: they change rarely and every turn asks. An
+ *  empty list when they can't be read; the turn goes on without the in-area flag. */
+let zips: { list: { zip: string; name: string }[]; at: number } | null = null;
+export async function serviceZipsFor(db: Db | null, now = Date.now()) {
+  if (!db) return [];
+  if (zips && now - zips.at < 600_000) return zips.list;
+  try { zips = { list: await db.serviceZips(), at: now }; }
+  catch (e) { console.error('dial service zips', e); zips = { list: zips?.list || [], at: now - 540_000 }; }
+  return zips.list;
+}
+
+/** Cloudflare's view of the visitor (request.cf): city, ZIP, ISP. Absent in some proxies and in plain Node. */
+export const cfOf = (locals: App.Locals, request: Request): Record<string, unknown> | null =>
+  ((locals as any).runtime?.cf || (request as any).cf || null) as Record<string, unknown> | null;
 
 /** The live config (lib/config.ts), falling back to data/dial.json. */
 export const configFor = (db: Db | null): Promise<Cfg> => liveConfig(db, BUILT_IN);

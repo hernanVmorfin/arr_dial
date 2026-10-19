@@ -2,14 +2,21 @@
  * compare-and-set updates, so tests of the service logic exercise the same rules production enforces.
  * The admin half (AdminDb) mirrors the tables and the comfort_dial_stats function in the admin migration. */
 import { codeStatus, parseSearch } from './db.ts';
-import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, InsertResult, Membership, NewEntry, Stats, Turn } from './db.ts';
+import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, Home, InsertResult, Membership, NewEntry, Stats, Turn } from './db.ts';
 import { chicagoDay } from './rules.js';
 
 type MemoryDb = DialDb & AdminDb & {
   turns: Turn[]; entries: Entry[]; memberships: Membership[]; configs: ConfigVersion[]; adminRows: Admin[]; auditRows: AuditRow[];
 };
 
-export function memoryDb(seed: { properties?: Record<string, string>; admins?: Admin[] } = {}): MemoryDb {
+export type MemorySeed = {
+  properties?: Record<string, string>;            // normalized address key → property key
+  homes?: Record<string, Home>;                   // normalized address key → county record
+  serviceZips?: { zip: string; name: string }[];
+  admins?: Admin[];
+};
+
+export function memoryDb(seed: MemorySeed = {}): MemoryDb {
   const turns: Turn[] = [];
   const entries: Entry[] = [];
   const memberships: Membership[] = [];
@@ -81,6 +88,9 @@ export function memoryDb(seed: { properties?: Record<string, string>; admins?: A
       e.redeemed_at = now.toISOString(); e.redeemed_note = note;
       return { ...e };
     },
+    async homeProfile(key) { const h = seed.homes?.[key]; return h ? { ...h } : null; },
+    async entriesAtAddress(key) { return entries.filter((e) => e.address_key === key).sort((a, b) => b.created_at.localeCompare(a.created_at)).map((e) => ({ ...e })); },
+    async serviceZips() { return (seed.serviceZips || []).map((z) => ({ ...z })); },
 
     async latestConfig() { return configs.length ? copy(configs.reduce((a, b) => (b.version > a.version ? b : a))) : null; },
     async configVersion(v) { const c = configs.find((x) => x.version === v); return c ? copy(c) : null; },

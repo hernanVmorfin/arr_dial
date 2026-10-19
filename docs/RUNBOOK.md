@@ -7,8 +7,10 @@ Setup, launch, the 50/50 test, and operations. Nothing reaches visitors until st
 In order. Each step is safe to stop after.
 
 1. **Supabase**: SQL Editor in project `dienlkpgmgetkkdyduap` (the Instant Pricing project) → run
-   `supabase/migrations/20261016_comfort_dial.sql`, then `supabase/migrations/20261019_comfort_dial_admin.sql` (the
-   admin's tables and the results function). They only create `comfort_dial_*` objects. If an empty `dial_entries`
+   `supabase/migrations/20261016_comfort_dial.sql`, then `20261019_comfort_dial_admin.sql` (the admin's tables and the
+   results function), then `20261020_comfort_dial_context.sql` (visit, home and earlier-contact columns, and
+   `comfort_dial_home`, which reads the pricing app's county tables). They only create `comfort_dial_*` objects.
+   (All three were applied on Oct 19, 2026 through the Supabase connector.) If an empty `dial_entries`
    table exists from the earlier PR #10 migration, it can be dropped; nothing reads it.
    **First admin**: Authentication → Users → Add user → email + password, auto-confirm. Then in the SQL editor:
    `insert into public.comfort_dial_admins (email, name) values ('jason@arrhvac.com', 'Jason');`. Everyone after
@@ -37,6 +39,8 @@ In order. Each step is safe to stop after.
    - `dial: true`, `integrations.supabase: "ok"`, and every integration you configured is `true`.
    - **`yourIp` must be your own public IP.** If it shows the same address for everyone (a Webflow proxy), set
      `DIAL_IP_LIMITS=off`, or the per-IP limits will block real visitors.
+   - `yourPlace` should be your city and ZIP. If it's `null`, Webflow Cloud isn't passing Cloudflare's location and
+     the visit context will have no city or in-area flag (everything else still works).
    - `https://www.alwaysreadyrepair.com/dial/` should open the dial.
    - `https://www.alwaysreadyrepair.com/dial/admin` should ask you to sign in, and let the first admin in.
 5. **Monday**:

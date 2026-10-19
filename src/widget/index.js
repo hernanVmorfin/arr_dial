@@ -18,6 +18,7 @@
  * Vanilla JS, every class prefixed arrd- and every rule under .arrd-root, because it lives on someone else's page. */
 import BUILT_IN from '../../data/dial.json';
 import { svgInner, buildRing as drawRing, drawFace, angToF, fToAng, A0, A1 } from './face.js';
+import { adParams, pathOf, referrerOf, cookieOf, gaClientId, klaviyoExchangeId, deviceKind, UTM_KEYS } from '../lib/visit.js';
 
 const EMBED = window.__ARR_DIAL__ || {};
 const CFG = Object.assign({
@@ -69,8 +70,44 @@ store.set({ device, roll });
 assign();   // from the bundled settings for now; again once /api/status brings the admin's
 
 /* ---------------- tracking: GTM dataLayer (dial_variant rides on every event for the 50/50 read) ---------------- */
+/* ---------------- the visit: kept as they browse, sent with a turn (lib/visit.js), never shown back ----------------
+ * first touch (this browser, kept): when, landing page, outside referrer, ad tags · visits so far ·
+ * this visit (sessionStorage): landing page, referrer, ad tags, the last 15 pages, how long they've been here.
+ * Paths only; a query string is kept only for its utm_* tags and ad click ids. */
+const VISIT = 'arr-dial-visit';
+const here = pathOf(location.href), hereAds = adParams(location.search), hereRef = referrerOf(document.referrer, location.hostname);
+let session = null;
+try { session = JSON.parse(sessionStorage.getItem(VISIT) || 'null'); } catch (e) {}
+const first = saved.first || { at: new Date().toISOString(), landing: here, referrer: hereRef, ads: hereAds };
+const visits = (saved.visits || 0) + (session ? 0 : 1);
+if (!session) session = { start: Date.now(), landing: here, referrer: hereRef, ads: hereAds, pages: [], views: 0 };
+else if (hereAds) session.ads = { ...(session.ads || {}), ...hereAds };   // a tagged link mid-visit
+if (session.pages[session.pages.length - 1] !== here) session.pages = [...session.pages, here].slice(-15);
+session.views = (session.views || 0) + 1;
+try { sessionStorage.setItem(VISIT, JSON.stringify(session)); } catch (e) {}
+store.set({ first, visits });
+
+/* Last touch wins for the code's utm: this page's tags, else this visit's, else the first visit's. */
 const UTM = {};
-try { new URLSearchParams(location.search).forEach((v, k) => { if (/^utm_|^gclid$|^fbclid$/.test(k)) UTM[k] = v.slice(0, 120); }); } catch (e) {}
+for (const src of [first.ads, session.ads, hereAds]) for (const k of [...UTM_KEYS, 'gclid', 'fbclid']) if (src && src[k]) UTM[k] = src[k];
+
+function visitContext() {
+  const c = document.cookie, ads = session.ads || {}, firstAds = first.ads || {};
+  const fbclid = ads.fbclid || firstAds.fbclid;
+  return {
+    firstSeen: first.at, visits, firstLanding: first.landing, firstReferrer: first.referrer, firstAds: first.ads,
+    landing: session.landing, referrer: session.referrer, ads: session.ads, pages: session.pages, pageViews: session.views, page: here,
+    secondsOnSite: Math.round((Date.now() - session.start) / 1000),
+    device: deviceKind(innerWidth, 'ontouchstart' in window || navigator.maxTouchPoints > 0),
+    screen: `${screen.width}x${screen.height}`, lang: navigator.language,
+    tz: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return undefined; } })(),
+    ids: {
+      ga: gaClientId(c), fbp: cookieOf(c, '_fbp'),
+      fbc: cookieOf(c, '_fbc') || (fbclid ? `fb.1.${session.start}.${fbclid}` : null),
+      kx: ads._kx || firstAds._kx || klaviyoExchangeId(c)
+    }
+  };
+}
 function track(ev, params = {}) {
   try { (window.dataLayer = window.dataLayer || []).push({ event: ev, dial_variant: variant, ...params }); } catch (e) {}
   if (ev === 'dial_claimed') { try { if (typeof fbq === 'function') fbq('track', 'Lead', { content_name: 'Comfort Dial', content_category: params.gift }); } catch (e) {} }
@@ -411,7 +448,7 @@ async function turn() {
   track('dial_turn_pressed');
   let res;
   try {
-    res = await api('turn', { device, token: await turnstileToken() });
+    res = await api('turn', { device, token: await turnstileToken(), context: visitContext() });
   } catch (e) { res = { error: `We couldn't reach the dial. Check your connection, or call ${DIAL.phone}.` }; }
   if (!res.ok) {
     busy = false; b.disabled = false; b.textContent = 'Turn the dial';

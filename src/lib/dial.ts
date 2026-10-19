@@ -14,7 +14,7 @@ import {
   validateAddress, expiresAt, holdUntil, dayAgo, isUuid
 } from './rules.js';
 import { addressKey } from './address.ts';
-import type { DialDb, Entry, Turn } from './db.ts';
+import type { Context, DialDb, Entry, Turn } from './db.ts';
 
 /** The shape of data/dial.json and of each published config. (Typed by hand so this module never imports JSON and
  *  runs under plain Node tests.) `active: false` takes a gift off the dial; `big`/`small` are its dial labels, which
@@ -56,7 +56,8 @@ export async function status(db: DialDb, cfg: Cfg, now = new Date()) {
   };
 }
 
-export type TurnInput = { ip: string | null; device: string | null; ipLimits: boolean };
+/** context: the visit (lib/visit.js), already cleaned; it rides along to the code if they claim. */
+export type TurnInput = { ip: string | null; device: string | null; ipLimits: boolean; context?: Context | null };
 export type TurnOk = { ok: true; turn: Turn; gift: Gift };
 
 export async function takeTurn(db: DialDb, cfg: Cfg, input: TurnInput, now = new Date(), rand?: () => number): Promise<TurnOk | Fail> {
@@ -86,7 +87,8 @@ export async function takeTurn(db: DialDb, cfg: Cfg, input: TurnInput, now = new
 
   const turn: Turn = {
     id, gift: gift.id, mem_month: memMonth, ip: input.ip, device: input.device,
-    created_at: now.toISOString(), held_until: until.toISOString(), claimed_at: null, entry_id: null, config_version: cfg.version || 0
+    created_at: now.toISOString(), held_until: until.toISOString(), claimed_at: null, entry_id: null, config_version: cfg.version || 0,
+    context: input.context || null
   };
   try { await db.insertTurn(turn); }
   catch (e) { if (memMonth) await db.releaseMembership(memMonth, id, now).catch(() => {}); throw e; }
@@ -151,7 +153,8 @@ export async function claimGift(db: DialDb, cfg: Cfg, input: ClaimInput, now = n
       code: makeCode(), turn_id: turn.id, phone, gift: gift.id, mem_month: isMem ? turn.mem_month : null,
       first_name: null, address, zip, household_key: household, sms_marketing: input.reminders === true,
       utm, page: input.page ? String(input.page).slice(0, 300) : null, ip: input.ip,
-      created_at: now.toISOString(), expires_at: expiresAt(now, cfg.expiresDays).toISOString()
+      created_at: now.toISOString(), expires_at: expiresAt(now, cfg.expiresDays).toISOString(),
+      context: turn.context || null, address_key: address && zip ? addressKey(address, zip) : null
     });
     if (res.ok) {
       await db.markTurnClaimed(turn.id, res.entry.id, now);
@@ -184,7 +187,7 @@ export async function addDetails(db: DialDb, cfg: Cfg, input: DetailsInput): Pro
   if (entry.gift !== cfg.membership.giftId) {   // a free-year winner's address is already locked to their home
     const v = validateAddress({ street: input.street, zip: input.zip }, cfg);
     if (!v.ok) return fail(400, v.error, { field: v.field });
-    patch.address = v.data.street; patch.zip = v.data.zip;
+    patch.address = v.data.street; patch.zip = v.data.zip; patch.address_key = addressKey(v.data.street, v.data.zip);
   }
   const updated = await db.updateEntry(entry.id, patch);
   return updated ? { ok: true, entry: updated } : fail(404, 'Claim your gift first.');

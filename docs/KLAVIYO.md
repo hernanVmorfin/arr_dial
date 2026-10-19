@@ -24,6 +24,12 @@ Use these in message templates as `{{ event.<name> }}`:
 | `reminders_opt_in` | true |
 | `phone_display` | (708) 671-0813 |
 | `utm_source`, `utm_campaign`, … | when the visit had them |
+| `home_year_built`, `home_sqft`, `home_heating`, `home_central_air`, `home_stories`, `home_basement` | when the county record is known (free-year winners at the claim) |
+| `visit_device`, `visit_city`, `visit_in_area` | from the visit |
+
+The winner's profile also gets these as custom properties named `arr_home_*` and `arr_visit_*` (set at the win when
+known, and again when they add an address), so segments like "`arr_home_central_air` is false" can target AC
+installs. Someone who arrived from a Klaviyo email or text is joined to their existing profile.
 
 ## Build the flow
 

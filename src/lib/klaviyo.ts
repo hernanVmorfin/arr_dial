@@ -20,6 +20,17 @@ function profile(e: Entry) {
   return { data: { type: 'profile', attributes: { phone_number: e164(e.phone), ...(e.first_name ? { first_name: e.first_name } : {}) } } };
 }
 
+/* The home and visit as flat properties, for flow filters and segments ("no central air", "came from Google"). */
+function homeProps(e: Entry, prefix: string) {
+  const h = e.home, g = e.context?.geo as Record<string, unknown> | undefined;
+  const out: Record<string, unknown> = {
+    [`${prefix}home_year_built`]: h?.yearBuilt, [`${prefix}home_sqft`]: h?.sqft, [`${prefix}home_stories`]: h?.stories,
+    [`${prefix}home_heating`]: h?.heating, [`${prefix}home_central_air`]: h?.centralAir, [`${prefix}home_basement`]: h?.basement,
+    [`${prefix}visit_device`]: e.context?.device, [`${prefix}visit_city`]: g?.city, [`${prefix}visit_in_area`]: g?.inArea
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined && v !== null));
+}
+
 export function wonEvent(e: Entry, gift: Gift, cfg: Cfg) {
   return {
     data: {
@@ -29,7 +40,8 @@ export function wonEvent(e: Entry, gift: Gift, cfg: Cfg) {
           code: e.code, gift_id: gift.id, gift_name: gift.name, gift_short: gift.short, gift_value: gift.value,
           expires_at: e.expires_at, expires_on: chicagoDate(e.expires_at).replace(/, \d{4}$/, ''),
           reminders_opt_in: e.sms_marketing, phone_display: cfg.phone, source: 'Comfort Dial',
-          ...(e.utm || {})
+          ...(e.utm || {}),
+          ...homeProps(e, '')
         },
         time: e.created_at,
         unique_id: e.code,
@@ -69,17 +81,37 @@ export function smsSubscribeJob(e: Entry, listId?: string) {
   };
 }
 
+/** Create or update the winner's profile. `_kx` (from a Klaviyo email or text click) joins it to the profile Klaviyo
+ *  already has for them; `properties` carries the home and visit as arr_* fields. */
 export function profileImport(e: Entry) {
+  const kx = e.context?.ids?.kx;
+  const props = homeProps(e, 'arr_');
   return {
     data: {
       type: 'profile',
       attributes: {
         phone_number: e164(e.phone),
+        ...(kx ? { _kx: kx } : {}),
         ...(e.first_name ? { first_name: e.first_name } : {}),
-        ...(e.address ? { location: { address1: e.address, zip: e.zip, region: 'IL', country: 'United States' } } : {})
+        ...(e.address ? { location: { address1: e.address, zip: e.zip, region: 'IL', country: 'United States' } } : {}),
+        ...(Object.keys(props).length ? { properties: props } : {})
       }
     }
   };
+}
+
+/** The Klaviyo profile already on file for this phone, if any. */
+export async function findProfileByPhone(env: unknown, phone: string) {
+  const q = new URLSearchParams({ filter: `equals(phone_number,"${e164(phone)}")`, 'fields[profile]': 'email,first_name,last_name,created' });
+  const res = await fetch(`${API}/profiles/?${q}`, {
+    headers: { Authorization: `Klaviyo-API-Key ${envVar(env, 'KLAVIYO_PRIVATE_KEY')}`, revision: REVISION, accept: 'application/vnd.api+json' },
+    signal: AbortSignal.timeout(6000)
+  });
+  if (!res.ok) throw new Error(`klaviyo profiles ${res.status} ${(await res.text()).slice(0, 200)}`);
+  const p = ((await res.json()) as any)?.data?.[0];
+  if (!p) return null;
+  const a = p.attributes || {};
+  return { id: String(p.id), email: a.email || undefined, firstName: a.first_name || undefined, lastName: a.last_name || undefined, since: a.created };
 }
 
 async function post(env: unknown, path: string, payload: unknown) {

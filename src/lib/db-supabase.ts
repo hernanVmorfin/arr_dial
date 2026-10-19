@@ -3,7 +3,7 @@
  * (the filter names the state we expect), so two visitors racing for the same month can't both win it: Postgres
  * re-checks the WHERE clause after the first writer commits and the second update matches nothing. */
 import { parseSearch } from './db.ts';
-import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, InsertResult, Membership, NewEntry, Stats, Turn } from './db.ts';
+import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, Home, InsertResult, Membership, NewEntry, Stats, Turn } from './db.ts';
 import { envVar } from './env.ts';
 
 const TIMEOUT_MS = 4000;
@@ -89,8 +89,11 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
         { body: { claimed_at: null, held_until: iso(now) }, prefer: 'return=representation' }), 'unclaim');
     },
     async insertTurn(t: Turn) {
-      const { config_version, ...rest } = t;
-      const res = await call('POST', T.turns, {}, { body: config_version ? t : rest, prefer: 'return=minimal' });
+      // config_version 0 and an empty context are left out, so a database without the later migrations still works
+      const body: Record<string, unknown> = { ...t };
+      if (!t.config_version) delete body.config_version;
+      if (!t.context) delete body.context;
+      const res = await call('POST', T.turns, {}, { body, prefer: 'return=minimal' });
       if (!res.ok) throw new Error(`supabase insert turn ${res.status} ${(await res.text()).slice(0, 200)}`);
     },
     async getTurn(id) { return one<Turn>(await call('GET', T.turns, { select: '*', id: `eq.${id}` }), 'turn'); },
@@ -103,7 +106,9 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
       return one<Entry>(await call('GET', T.entries, { select: '*', gift: 'eq.mem', household_key: `eq.${hk}` }), 'household');
     },
     async insertEntry(e: NewEntry): Promise<InsertResult> {
-      const res = await call('POST', T.entries, { select: '*' }, { body: e, prefer: 'return=representation' });
+      const body: Record<string, unknown> = { ...e };
+      for (const k of ['context', 'home', 'prior', 'address_key'] as const) if (body[k] == null) delete body[k];
+      const res = await call('POST', T.entries, { select: '*' }, { body, prefer: 'return=representation' });
       if (res.ok) return { ok: true, entry: (await res.json() as Entry[])[0] };
       const text = await res.text();
       if (res.status !== 409) throw new Error(`supabase insert entry ${res.status} ${text.slice(0, 200)}`);
@@ -196,6 +201,18 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
     async redeemEntry(id, now, note) {
       return one<Entry>(await call('PATCH', T.entries, { id: `eq.${id}`, redeemed_at: 'is.null', voided_at: 'is.null', select: '*' },
         { body: { redeemed_at: iso(now), redeemed_note: note }, prefer: 'return=representation' }), 'redeem entry');
+    },
+    async homeProfile(key) {
+      const res = await call('POST', 'rpc/comfort_dial_home', {}, { body: { p_key: key } });
+      if (!res.ok) throw new Error(`supabase home ${res.status} ${(await res.text()).slice(0, 200)}`);
+      const h = await res.json();
+      return h && typeof h === 'object' && Object.keys(h).length ? (h as Home) : null;
+    },
+    async entriesAtAddress(key) {
+      return rows<Entry>(await call('GET', T.entries, { select: '*', address_key: `eq.${key}`, order: 'created_at.desc', limit: '20' }), 'entries at address');
+    },
+    async serviceZips() {
+      return rows<{ zip: string; name: string }>(await call('GET', 'service_area_zips', { select: 'zip,name', active: 'is.true', order: 'priority.asc,zip.asc' }), 'service zips');
     },
     async stats(since, until) {
       const res = await call('POST', 'rpc/comfort_dial_stats', {}, { body: { p_since: iso(since), p_until: iso(until) } });

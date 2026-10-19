@@ -1,6 +1,7 @@
 /* Codes: find a winner by code, phone, name or street; open one to redeem, void, restore, extend or text it again.
  * Every action lands on the code's history with who did it. Monday and Klaviyo follow on their own. */
 import { S } from './store.js';
+import { homeLine, homeHints, priorLine, priorChecked, visitLine } from '../lib/profile.js';
 import { BASE, api, esc, $, dialog, toast, fmtDate, fmtWhen, fmtShortWhen, fmtPhone, fmtNum } from './ui.js';
 
 export const STATUS = { issued: 'Usable', redeemed: 'Redeemed', expired: 'Expired', void: 'Void' };
@@ -86,7 +87,30 @@ function facts(e) {
     e.page ? ['Page', `<span class="small">${esc(e.page)}</span>`] : null,
     ['Monday item', e.monday_item_id ? esc(e.monday_item_id) : '<span class="muted">None yet</span>']
   ].filter(Boolean);
-  return `<dl class="facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+  return `<dl class="facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${known(e)}`;
+}
+
+/* Earlier contact, and which sources were actually asked: Monday or Klaviyo not set up (or failing) isn't "nothing". */
+function seenBefore(p) {
+  if (!p) return '<span class="muted">Not checked yet</span>';
+  const checked = priorChecked(p), skipped = ['Monday', 'Klaviyo'].filter((s) => !checked.includes(s));
+  const found = priorLine(p) || (checked.length ? `Nothing found (checked ${checked.join(', ')})` : 'Nothing checked');
+  const note = skipped.length ? `Not checked: ${skipped.join(' and ')}${p.errors ? ' (a lookup failed; see the logs)' : ' (not set up)'}` : p.errors ? 'Some lookups failed; see the logs.' : '';
+  return esc(found) + (note ? `<br><span class="muted small">${esc(note)}</span>` : '');
+}
+
+/* What we learned beyond the form: the county record, earlier contact, the visit. Internal only. */
+function known(e) {
+  const hints = homeHints(e.home);
+  const ids = e.context && e.context.ids ? Object.entries(e.context.ids).map(([k, v]) => `${{ ga: 'GA', fbp: 'Meta browser', fbc: 'Meta click', kx: 'Klaviyo' }[k] || k}: ${v}`).join(' · ') : '';
+  const rows = [
+    ['Home', e.home ? esc(homeLine(e.home)) : `<span class="muted">${e.address ? 'Not in county records' : 'No address yet'}</span>`],
+    hints.length ? ['Worth asking', esc(hints.join('; '))] : null,
+    ['Seen before', seenBefore(e.prior)],
+    ['Visit', e.context ? esc(visitLine(e.context) || '–') : '<span class="muted">Not recorded</span>'],
+    ids ? ['Ad ids', `<span class="small">${esc(ids)}</span>`] : null
+  ].filter(Boolean);
+  return `<p class="label" style="margin:10px 0 4px">What we know beyond the form</p><dl class="facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 }
 
 function actions(e) {

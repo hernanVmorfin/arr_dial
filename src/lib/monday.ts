@@ -3,8 +3,9 @@
  * Column ids are the pricing app's (board 18432287526, apps/pricing/src/lib/leads.ts in the v2 repo); a different
  * board means different ids. The "Code status" column is new: its id comes from MONDAY_CODE_STATUS_COLUMN. */
 import { chicagoDate, fmtPhone } from './rules.js';
+import { homeHints, homeLine, priorLine, visitLine } from './profile.js';
 import { envVar } from './env.ts';
-import type { Entry } from './db.ts';
+import type { Entry, Lead } from './db.ts';
 import type { Cfg, Gift } from './dial.ts';
 
 export const MONDAY_COLUMNS = {
@@ -31,7 +32,11 @@ export function pasteBlock(e: Entry, gift: Gift, cfg: Cfg) {
     e.voided_at ? `VOID: ${e.voided_note || 'cancelled in the admin'}. Do not honor this code.` : null,
     `Texts: code sent by Podium · reminders ${e.sms_marketing ? 'yes (Klaviyo)' : 'no'}`,
     `NEXT: when they call, check the phone matches, search the board for their street to make sure the home hasn't redeemed a dial code before, put the service address on this item, apply the gift in Sera, then set Code status to Redeemed.`,
-    utmText(e.utm) ? `UTM: ${utmText(e.utm)}` : null
+    utmText(e.utm) ? `UTM: ${utmText(e.utm)}` : null,
+    e.home ? `Home (county record): ${homeLine(e.home)}` : null,
+    homeHints(e.home).length ? `Worth asking: ${homeHints(e.home).join('; ')}` : null,
+    priorLine(e.prior) ? `Seen before: ${priorLine(e.prior)}` : null,
+    visitLine(e.context) ? `Visit: ${visitLine(e.context)}` : null
   ].filter(Boolean).join('\n');
 }
 
@@ -101,6 +106,24 @@ export async function syncDialItem(env: unknown, itemId: string, e: Entry, gift:
   if (col) values[col] = { label: e.voided_at ? 'Void' : e.redeemed_at ? 'Redeemed' : 'Issued' };
   await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c, create_labels_if_missing: true) { id } }',
     { b: envVar(env, 'MONDAY_BOARD_ID'), i: itemId, c: JSON.stringify(values) });
+}
+
+/** Earlier items on the leads board with this phone (Instant Pricing quotes, past dial wins). The phone column is
+ *  matched on the forms numbers get stored in. Called before the winner's own item exists. */
+export async function findLeadsByPhone(env: unknown, phone: string): Promise<Lead[]> {
+  const C = MONDAY_COLUMNS;
+  const data = await monday(env, `query($b: ID!, $c: String!, $v: [String]!) {
+    items_page_by_column_values(limit: 10, board_id: $b, columns: [{ column_id: $c, column_values: $v }]) {
+      items { id name created_at group { title } column_values(ids: ["${C.status}", "${C.source}", "${C.quote}"]) { id text } }
+    } }`, { b: envVar(env, 'MONDAY_BOARD_ID'), c: C.phone, v: [phone, `1${phone}`, `+1${phone}`, fmtPhone(phone)] });
+  const items: any[] = data?.items_page_by_column_values?.items || [];
+  return items.map((it) => {
+    const col = (id: string) => (it.column_values || []).find((c: any) => c.id === id)?.text || undefined;
+    return {
+      id: String(it.id), name: String(it.name || '').slice(0, 140), created: it.created_at, group: it.group?.title,
+      status: col(C.status), source: col(C.source), notes: col(C.quote)?.slice(0, 400)
+    };
+  });
 }
 
 /** Monday's "When a column changes, send a webhook" integration. First call is a challenge to echo back.

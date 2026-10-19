@@ -26,7 +26,8 @@ A Webflow Cloud app (Astro on Cloudflare Workers) mounted at `alwaysreadyrepair.
    membership, one per month) is held for that turn alone, so the countdown is real.
 3. **Claim**: a mobile number. A free-year winner also gives a home address, which must match a county record.
    One gift per phone (database constraint); one per household is checked by the CSR at booking.
-4. **After the win** (in the background): Monday item, Podium text with the code, Klaviyo "Comfort Dial Won" event.
+4. **After the win** (in the background): the code is texted at once (Podium). Then the dial looks up what it can
+   (below), and the Monday item and Klaviyo's "Comfort Dial Won" event go out with it.
 5. **Redeemed**: the CSR sets Code status to Redeemed on the Monday item; the webhook marks the code used and tells
    Klaviyo, which stops the reminders.
 
@@ -35,6 +36,20 @@ new version in Supabase (`comfort_dial_config`), and each turn records the versi
 `data/dial.json` is version 0: what runs until someone publishes, and the fallback if Supabase can't be read. Each
 gift's weight is both its odds and its arc on the dial; the admin lays the dial out from the odds and refuses to
 publish a config that breaks the rules in `validateConfig` (`src/lib/rules.js`).
+
+## What we know beyond the form
+
+Nothing here is shown to the visitor; it is for the CSR (Monday item notes, the admin's code view) and Klaviyo.
+
+| | When | What |
+|---|---|---|
+| Visit | Every turn | First visit and this one: landing page, outside referrer, utm tags and ad click ids (Google, Meta, Microsoft, TikTok, Klaviyo), pages viewed, visits so far, time on site, device. GA client id and Meta browser ids. City and ZIP from the IP (Cloudflare) and whether that ZIP is one ARR serves (`service_area_zips`). Paths only: query strings are dropped except utm tags and click ids. |
+| Home | When they give an address (free year at the claim, anyone in "book faster") | The county record from the pricing app's tables: year built, size, stories, style, heating (furnace or boiler), central air, basement. Suggests what to ask about ("no central air on record"). |
+| Seen before | After the claim | Earlier items with their phone on the Monday leads board (Instant Pricing quotes), their Klaviyo profile, other dial codes at the same home. |
+
+Klaviyo gets the home and visit as event properties (`home_*`, `visit_*`) and profile properties (`arr_*`); someone who
+arrived from a Klaviyo email or text is joined to their existing profile (`_kx`). The code itself never waits on any
+of it: the text goes out first, and a lookup that fails is noted and skipped.
 
 ## The admin
 

@@ -4,12 +4,14 @@ import { supabaseConfig, supabaseDb } from '../../lib/db-supabase.ts';
 import { mondayConfigured } from '../../lib/monday.ts';
 import { podiumConfigured } from '../../lib/podium.ts';
 import { klaviyoConfigured } from '../../lib/klaviyo.ts';
-import { configFor, dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
+import { cfOf, configFor, dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
+import { geoFrom } from '../../lib/visit.js';
 import { envVar } from '../../lib/env.ts';
 import { clientIp, json } from '../../lib/http.ts';
 
 /* GET /api/health[?deep=1]. `build` answers "did my push ship?". ?deep=1 also reads Supabase and shows the IP this
  * Worker sees for you: if it isn't your own IP (Webflow's proxy, the same for everyone), set DIAL_IP_LIMITS=off.
+ * `yourPlace` is the city/ZIP Cloudflare gives for that IP: null means the visit context gets no location.
  * The typeof guard matters: a bare __BUILD__ throws if the define is ever dropped, and health has to answer. */
 const build = typeof __BUILD__ === 'undefined' ? { commit: 'unknown', builtAt: null } : __BUILD__;
 
@@ -31,6 +33,6 @@ export const GET: APIRoute = async (ctx) => {
     },
     ipLimits: ipLimitsOn(env),
     season: { month, freeYearInSeason: membershipActive(DIAL) && inSeason(DIAL, month), months: DIAL.membership.months },
-    ...(deep ? { yourIp: clientIp(request, () => ctx.clientAddress) } : {})
+    ...(deep ? { yourIp: clientIp(request, () => ctx.clientAddress), yourPlace: geoFrom(cfOf(locals, request), null) } : {})
   });
 };

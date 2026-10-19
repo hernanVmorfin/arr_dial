@@ -9,6 +9,25 @@
 export type Turn = {
   id: string; gift: string; mem_month: string | null; ip: string | null; device: string | null;
   created_at: string; held_until: string; claimed_at: string | null; entry_id: string | null; config_version?: number | null;
+  context?: Context | null;
+};
+
+/* What we know beyond the form (supabase/migrations/20261020_comfort_dial_context.sql). Context: the visit, from
+ * lib/visit.js cleanContext plus `geo` from geoFrom. Home: the county record (comfort_dial_home). Prior: earlier
+ * contact found after the claim (lib/enrich.ts). None of it is sent back to the visitor. */
+export type Context = Record<string, unknown> & { geo?: Record<string, unknown> | null; ids?: Record<string, string> };
+export type Home = {
+  propertyKey?: string; county?: string; municipality?: string; township?: string; yearBuilt?: number; sqft?: number;
+  stories?: string; style?: string; heating?: string; centralAir?: boolean; basement?: string; basementFinish?: string;
+  rooms?: number; assessedYear?: number;
+};
+export type Lead = { id: string; name: string; created: string; group?: string; status?: string; source?: string; notes?: string };
+export type Prior = {
+  checkedAt: string;
+  leads?: Lead[];
+  klaviyo?: { id: string; email?: string; firstName?: string; lastName?: string; since: string } | null;
+  atAddress?: { code: string; gift: string; status: CodeStatus; created_at: string }[];
+  errors?: string[];
 };
 
 export type Entry = {
@@ -17,6 +36,7 @@ export type Entry = {
   sms_marketing: boolean; utm: Record<string, string> | null; page: string | null; ip: string | null;
   monday_item_id: string | null; created_at: string; expires_at: string; redeemed_at: string | null; redeemed_note: string | null;
   voided_at?: string | null; voided_note?: string | null;
+  context?: Context | null; home?: Home | null; prior?: Prior | null; address_key?: string | null;
 };
 
 export type NewEntry = Omit<Entry, 'id' | 'created_at' | 'redeemed_at' | 'redeemed_note' | 'monday_item_id' | 'voided_at' | 'voided_note'> & { created_at: string };
@@ -51,6 +71,12 @@ export interface DialDb {
   /** The county parcel key for a normalized address (Supabase property_addresses), or null. */
   propertyKey(normalizedKey: string): Promise<string | null>;
   redeemByMondayItem(itemId: string, now: Date, note: string): Promise<Entry | null>;
+  /** The county record for a normalized address (comfort_dial_home), or null. */
+  homeProfile(normalizedKey: string): Promise<Home | null>;
+  /** Codes whose address normalizes to this key, newest first. */
+  entriesAtAddress(normalizedKey: string): Promise<Entry[]>;
+  /** The ZIPs ARR serves (the pricing app's service_area_zips, active ones). */
+  serviceZips(): Promise<{ zip: string; name: string }[]>;
 }
 
 /* ---------------- the admin's storage (supabase/migrations/20261019_comfort_dial_admin.sql) ---------------- */
