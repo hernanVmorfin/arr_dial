@@ -1,6 +1,7 @@
 /* Podium texts each new winner their code from ARR's number, so a reply lands with the office where CSRs work.
- * A phone can win only once (unique in comfort_dial_entries) and repeat claims send nothing, so the dial can text a
- * given number at most once. The copy is fixed; the only visitor-supplied value is the phone itself. */
+ * A phone can win only once (unique in comfort_dial_entries) and repeat claims send nothing, so the dial itself texts
+ * a given number once. An admin can resend it (a customer lost the text), at most 3 times a day per code, logged.
+ * The copy is fixed; the only visitor-supplied value is the phone itself. */
 import { chicagoDate } from './rules.js';
 import { envVar } from './env.ts';
 import type { Entry } from './db.ts';

@@ -1,11 +1,10 @@
 import type { APIRoute } from 'astro';
-import DIAL from '../../../data/dial.json';
-import { chicagoMonth, inSeason } from '../../lib/rules.js';
+import { chicagoMonth, inSeason, membershipActive } from '../../lib/rules.js';
 import { supabaseConfig, supabaseDb } from '../../lib/db-supabase.ts';
 import { mondayConfigured } from '../../lib/monday.ts';
 import { podiumConfigured } from '../../lib/podium.ts';
 import { klaviyoConfigured } from '../../lib/klaviyo.ts';
-import { envOf, ipLimitsOn } from '../../lib/runtime.ts';
+import { configFor, dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
 import { envVar } from '../../lib/env.ts';
 import { clientIp, json } from '../../lib/http.ts';
 
@@ -20,8 +19,10 @@ export const GET: APIRoute = async (ctx) => {
   const deep = url.searchParams.get('deep') === '1';
   const supabase = !supabaseConfig(env) ? 'not_configured' : deep ? await supabaseDb(env).probe() : 'configured';
   const month = chicagoMonth();
+  const DIAL = await configFor(dbFor(env));
   return json(request, {
     ok: true, dial: supabase !== 'not_configured', build,
+    config: { version: DIAL.version ?? 0, enabled: DIAL.enabled !== false },
     integrations: {
       supabase,
       monday: mondayConfigured(env), mondayCodeStatusColumn: !!envVar(env, 'MONDAY_CODE_STATUS_COLUMN'), mondayWebhook: !!envVar(env, 'MONDAY_WEBHOOK_SECRET'),
@@ -29,7 +30,7 @@ export const GET: APIRoute = async (ctx) => {
       turnstile: !!(envVar(env, 'TURNSTILE_SITE_KEY') && envVar(env, 'TURNSTILE_SECRET_KEY'))
     },
     ipLimits: ipLimitsOn(env),
-    season: { month, freeYearInSeason: inSeason(DIAL, month), months: DIAL.membership.months },
+    season: { month, freeYearInSeason: membershipActive(DIAL) && inSeason(DIAL, month), months: DIAL.membership.months },
     ...(deep ? { yourIp: clientIp(request, () => ctx.clientAddress) } : {})
   });
 };

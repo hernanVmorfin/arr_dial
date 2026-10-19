@@ -2,11 +2,15 @@
  * Tables: supabase/migrations/20261016_comfort_dial.sql. The free-year hold and claim are compare-and-set PATCHes
  * (the filter names the state we expect), so two visitors racing for the same month can't both win it: Postgres
  * re-checks the WHERE clause after the first writer commits and the second update matches nothing. */
-import type { DialDb, Entry, InsertResult, Membership, NewEntry, Turn } from './db.ts';
+import { parseSearch } from './db.ts';
+import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, InsertResult, Membership, NewEntry, Stats, Turn } from './db.ts';
 import { envVar } from './env.ts';
 
 const TIMEOUT_MS = 4000;
-const T = { turns: 'comfort_dial_turns', entries: 'comfort_dial_entries', memberships: 'comfort_dial_memberships' };
+const T = {
+  turns: 'comfort_dial_turns', entries: 'comfort_dial_entries', memberships: 'comfort_dial_memberships',
+  config: 'comfort_dial_config', admins: 'comfort_dial_admins', audit: 'comfort_dial_audit'
+};
 
 export function supabaseConfig(env: unknown) {
   const url = envVar(env, 'SUPABASE_URL');
@@ -15,10 +19,10 @@ export function supabaseConfig(env: unknown) {
 }
 
 /* Supabase's sb_secret_* keys belong in apikey only. Legacy service-role JWTs still need the Bearer header. */
-const authHeaders = (key: string): Record<string, string> =>
+export const authHeaders = (key: string): Record<string, string> =>
   key.startsWith('sb_secret_') ? { apikey: key } : { apikey: key, Authorization: `Bearer ${key}` };
 
-export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb & { probe(): Promise<'ok' | 'error'> } {
+export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb & AdminDb & { probe(): Promise<'ok' | 'error'> } {
   const c = supabaseConfig(env);
   if (!c) throw new Error('Supabase is not configured');
 
@@ -85,7 +89,8 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
         { body: { claimed_at: null, held_until: iso(now) }, prefer: 'return=representation' }), 'unclaim');
     },
     async insertTurn(t: Turn) {
-      const res = await call('POST', T.turns, {}, { body: t, prefer: 'return=minimal' });
+      const { config_version, ...rest } = t;
+      const res = await call('POST', T.turns, {}, { body: config_version ? t : rest, prefer: 'return=minimal' });
       if (!res.ok) throw new Error(`supabase insert turn ${res.status} ${(await res.text()).slice(0, 200)}`);
     },
     async getTurn(id) { return one<Turn>(await call('GET', T.turns, { select: '*', id: `eq.${id}` }), 'turn'); },
@@ -121,6 +126,81 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
     async redeemByMondayItem(itemId, now, note) {
       return one<Entry>(await call('PATCH', T.entries, { monday_item_id: `eq.${itemId}`, redeemed_at: 'is.null', select: '*' },
         { body: { redeemed_at: iso(now), redeemed_note: note }, prefer: 'return=representation' }), 'redeem');
+    },
+
+    /* Before the admin migration has run there is no config table: PostgREST answers 404 and the dial runs on the
+     * built-in data/dial.json. */
+    async latestConfig() {
+      const res = await call('GET', T.config, { select: '*', order: 'version.desc', limit: '1' });
+      if (res.status === 404) return null;
+      return one<ConfigVersion>(res, 'latest config');
+    },
+    async configVersion(v) { return one<ConfigVersion>(await call('GET', T.config, { select: '*', version: `eq.${v}` }), 'config version'); },
+    async configVersions(limit) { return rows<ConfigVersion>(await call('GET', T.config, { select: '*', order: 'version.desc', limit: String(limit) }), 'config versions'); },
+    async insertConfig(row) {
+      const res = await call('POST', T.config, {}, { body: row, prefer: 'return=minimal' });
+      if (res.ok) return 'ok';
+      if (res.status === 409) return 'conflict';
+      throw new Error(`supabase insert config ${res.status} ${(await res.text()).slice(0, 200)}`);
+    },
+
+    async admin(email) { return one<Admin>(await call('GET', T.admins, { select: '*', email: `eq.${email.toLowerCase()}` }), 'admin'); },
+    async admins() { return rows<Admin>(await call('GET', T.admins, { select: '*', order: 'name.asc' }), 'admins'); },
+    async addAdmin(a) {
+      const res = await call('POST', T.admins, {}, { body: a, prefer: 'return=minimal' });
+      if (res.ok) return 'ok';
+      if (res.status === 409) return 'exists';
+      throw new Error(`supabase add admin ${res.status} ${(await res.text()).slice(0, 200)}`);
+    },
+    async removeAdmin(email) {
+      const res = await call('DELETE', T.admins, { email: `eq.${email}` });
+      if (!res.ok) throw new Error(`supabase remove admin ${res.status}`);
+    },
+
+    async audit(row: AuditRow) {
+      const res = await call('POST', T.audit, {}, { body: row, prefer: 'return=minimal' });
+      if (!res.ok) throw new Error(`supabase audit ${res.status} ${(await res.text()).slice(0, 200)}`);
+    },
+    async auditCount(action, since, by) {
+      return count(T.audit, { action: `eq.${action}`, at: `gte.${iso(since)}`, ...(by.ip ? { ip: `eq.${by.ip}` } : {}), ...(by.target ? { target: `eq.${by.target}` } : {}) });
+    },
+    async auditFor(target, limit) {
+      return rows<AuditRow>(await call('GET', T.audit, { select: 'at,actor,action,target,detail,ip', target: `eq.${target}`, order: 'at.desc', limit: String(limit) }), 'audit for');
+    },
+    async lastLogins() {
+      const r = await rows<{ target: string; at: string }>(await call('GET', T.audit, { select: 'target,at', action: 'eq.login', order: 'at.desc', limit: '500' }), 'last logins');
+      const out: Record<string, string> = {};
+      for (const x of r) if (x.target && !out[x.target]) out[x.target] = x.at;
+      return out;
+    },
+
+    async entryByCode(code) { return one<Entry>(await call('GET', T.entries, { select: '*', code: `eq.${code}` }), 'entry by code'); },
+    async entryById(id) { return one<Entry>(await call('GET', T.entries, { select: '*', id: `eq.${id}` }), 'entry by id'); },
+    async searchEntries(s) {
+      const p: Record<string, string> = { select: '*', order: 'created_at.desc', limit: String(s.limit), offset: String(s.offset) };
+      const q = parseSearch(s.q);
+      if (q && 'code' in q) p.code = `eq.${q.code}`;
+      else if (q && 'phone' in q) p.phone = `like.*${q.phone}*`;
+      else if (q) p.or = `(${['address', 'first_name', 'code'].map((c) => `${c}.ilike."*${q.text}*"`).join(',')})`;
+      const now = iso(s.now);
+      if (s.status === 'issued') Object.assign(p, { voided_at: 'is.null', redeemed_at: 'is.null', expires_at: `gt.${now}` });
+      if (s.status === 'redeemed') Object.assign(p, { voided_at: 'is.null', redeemed_at: 'not.is.null' });
+      if (s.status === 'expired') Object.assign(p, { voided_at: 'is.null', redeemed_at: 'is.null', expires_at: `lte.${now}` });
+      if (s.status === 'void') p.voided_at = 'not.is.null';
+      if (s.gift) p.gift = `eq.${s.gift}`;
+      const res = await call('GET', T.entries, p, { prefer: 'count=exact' });
+      const list = await rows<Entry>(res, 'search entries');
+      const m = /\/(\d+)$/.exec(res.headers.get('content-range') || '');
+      return { rows: list, total: m ? Number(m[1]) : list.length };
+    },
+    async redeemEntry(id, now, note) {
+      return one<Entry>(await call('PATCH', T.entries, { id: `eq.${id}`, redeemed_at: 'is.null', voided_at: 'is.null', select: '*' },
+        { body: { redeemed_at: iso(now), redeemed_note: note }, prefer: 'return=representation' }), 'redeem entry');
+    },
+    async stats(since, until) {
+      const res = await call('POST', 'rpc/comfort_dial_stats', {}, { body: { p_since: iso(since), p_until: iso(until) } });
+      if (!res.ok) throw new Error(`supabase stats ${res.status} ${(await res.text()).slice(0, 200)}`);
+      return (await res.json()) as Stats;
     }
   };
 }

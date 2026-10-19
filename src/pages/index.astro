@@ -44,11 +44,12 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
       </div>
     </main>
     <script is:inline define:vars={{ apiBase: `${base}api/` }}>
-      // QA overrides: ?split=0 shows what the control half sees; ?snooze=7 keeps it closed after the first view.
+      // QA overrides, ahead of the admin's popup settings (`force`): ?split=0 shows what the control group sees;
+      // ?snooze=7 keeps it closed after the first view.
       const q = new URLSearchParams(location.search);
       window.__ARR_DIAL__ = Object.assign({
-        apiBase, split: q.has('split') ? Number(q.get('split')) : 1, delayMs: 600,
-        snoozeDays: q.has('snooze') ? Number(q.get('snooze')) : 0, excludePaths: []
+        apiBase,
+        force: { split: q.has('split') ? Number(q.get('split')) : 1, delayMs: 600, snoozeDays: q.has('snooze') ? Number(q.get('snooze')) : 0, excludePaths: [] }
       }, window.__ARR_DIAL__ || {});
     </script>
     <script>

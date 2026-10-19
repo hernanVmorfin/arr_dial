@@ -1,9 +1,8 @@
 import type { APIRoute } from 'astro';
-import DIAL from '../../../data/dial.json';
 import { giftById } from '../../lib/dial.ts';
 import { parseRedeemedWebhook } from '../../lib/monday.ts';
 import { announceRedeemed } from '../../lib/fanout.ts';
-import { afterResponse, dbFor, envOf } from '../../lib/runtime.ts';
+import { afterResponse, configFor, dbFor, envOf } from '../../lib/runtime.ts';
 import { envVar } from '../../lib/env.ts';
 
 /* POST /api/redeemed?key=<MONDAY_WEBHOOK_SECRET> — Monday's "When a column changes, send a webhook" on the Code status
@@ -25,7 +24,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!db) return plain(503, { error: 'not configured' });
   try {
     const entry = await db.redeemByMondayItem(parsed.itemId, new Date(), 'Code status set to Redeemed in Monday');
-    if (entry) await afterResponse(locals, announceRedeemed(env, entry, giftById(DIAL, entry.gift)));
+    if (entry) await afterResponse(locals, announceRedeemed(env, entry, giftById(await configFor(db), entry.gift)));
     return plain(200, { ok: true, redeemed: entry ? entry.code : null });
   } catch (e) {
     console.error('dial redeemed', e);

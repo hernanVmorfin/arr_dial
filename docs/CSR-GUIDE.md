@@ -27,10 +27,15 @@ A customer calls with a code like **ARR-7K3P** from the Comfort Dial on our webs
 
 7. **Set Code status to `Redeemed`.** This marks the code used and stops their reminder texts.
 
+If you're a dial admin, the admin's **Codes** tab (alwaysreadyrepair.com/dial/admin) does steps 1 to 3 and 7 in one
+place: search the code, phone, name or street, see its status and expiry, and mark it redeemed. A `Void` Code status
+means the code was cancelled: don't honor it.
+
 ## Good to know
 
 - Codes can't be combined with other offers, have no cash value, and last 30 days from when they were claimed.
-- If they lost their code: find their phone number on the board. The code is in the item name.
+- If they lost their code: find their phone number on the board. The code is in the item name. An admin can also
+  text it to them again from the Codes tab.
 - If a customer says they didn't get a text, search the board for their phone number. If the item is there, read
   them the code. If there's no item, they didn't finish claiming; take care of them by phone as usual.
 - Questions about the promotion: the official rules are at alwaysreadyrepair.com/dial/rules.

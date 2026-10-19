@@ -1,9 +1,8 @@
 import type { APIRoute } from 'astro';
-import DIAL from '../../../data/dial.json';
 import { claimGift } from '../../lib/dial.ts';
 import { chicagoDate } from '../../lib/rules.js';
 import { announceWin } from '../../lib/fanout.ts';
-import { afterResponse, dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
+import { afterResponse, configFor, dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
 import { clientIp, json, preflight, readJson } from '../../lib/http.ts';
 
 /* POST /api/claim { turn, phone, street?, zip?, reminders, utm?, page? }
@@ -14,6 +13,7 @@ export const POST: APIRoute = async (ctx) => {
   const { request, locals } = ctx;
   const env = envOf(locals);
   const db = dbFor(env);
+  const DIAL = await configFor(db);
   if (!db) return json(request, { error: `The dial is resting right now. Call ${DIAL.phone} and we'll take care of you.` }, 503);
   const body = await readJson(request);
   if (!body) return json(request, { error: 'Bad request.' }, 400);

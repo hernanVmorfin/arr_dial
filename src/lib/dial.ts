@@ -10,22 +10,32 @@
  *
  * Storage is the DialDb interface (lib/db.ts). Nothing here does I/O except through it. */
 import {
-  chicagoMonth, inSeason, membershipsLeft, nextMembershipMonth, pickGift, makeCode, normPhone, cleanFirstName,
+  chicagoMonth, inSeason, membershipsLeft, membershipActive, nextMembershipMonth, pickGift, makeCode, normPhone, cleanFirstName,
   validateAddress, expiresAt, holdUntil, dayAgo, isUuid
 } from './rules.js';
 import { addressKey } from './address.ts';
 import type { DialDb, Entry, Turn } from './db.ts';
 
-/** The shape of data/dial.json. (Typed by hand so this module never imports JSON and runs under plain Node tests.) */
-export type Gift = { id: string; short: string; name: string; sub: string; weight: number; value: number; fill: string; ink: string };
+/** The shape of data/dial.json and of each published config. (Typed by hand so this module never imports JSON and
+ *  runs under plain Node tests.) `active: false` takes a gift off the dial; `big`/`small` are its dial labels, which
+ *  layoutZones copies onto its zones. `version` is added when loaded (lib/config.ts), never stored. */
+export type Gift = {
+  id: string; short: string; name: string; sub: string; weight: number; value: number; fill: string; ink: string;
+  active?: boolean; big?: string; small?: string;
+};
+export type Popup = { split: number; delayMs: number; snoozeDays: number; excludePaths: string[]; tab: boolean };
 export type Cfg = {
-  season: string; phone: string; bookUrl: string; rulesFinal: boolean; expiresDays: number; holdMinutes: number; zipPrefixes: string[];
+  enabled: boolean; season: string; phone: string; bookUrl: string; rulesFinal: boolean; expiresDays: number; holdMinutes: number; zipPrefixes: string[];
   limits: { turnsPerDevicePerDay: number; turnsPerIpPerDay: number; claimsPerIpPerDay: number };
+  popup: Popup;
   membership: { giftId: string; months: string[] };
   gifts: Gift[];
   zones: { gift: string; pct: number; big: string; small: string }[];
+  version?: number;
 };
-export const giftById = (cfg: Cfg, id: string) => cfg.gifts.find((g) => g.id === id)!;
+/** Codes outlive config changes, so a gift id always resolves, even one that somehow left the config. */
+export const giftById = (cfg: Cfg, id: string): Gift =>
+  cfg.gifts.find((g) => g.id === id) || { id, short: id.toUpperCase(), name: id, sub: '', weight: 0, value: 0, fill: '#dee5ee', ink: '#14284e', active: false };
 
 /** Seconds of slack after the countdown hits zero, for a slow network on the claim tap. */
 const CLAIM_GRACE_MS = 60_000;
@@ -35,13 +45,14 @@ const fail = (status: number, error: string, extra: Partial<Fail> = {}): Fail =>
 
 export async function status(db: DialDb, cfg: Cfg, now = new Date()) {
   const month = chicagoMonth(now);
-  const claimed = await db.claimedMonths();
+  const on = membershipActive(cfg);
+  const claimed = on ? await db.claimedMonths() : [];
   return {
     month,
-    membershipOpen: inSeason(cfg, month) && !claimed.includes(month),
-    membershipsLeft: membershipsLeft(cfg, month, claimed),
+    membershipOpen: on && inSeason(cfg, month) && !claimed.includes(month),
+    membershipsLeft: on ? membershipsLeft(cfg, month, claimed) : 0,
     membershipsTotal: cfg.membership.months.length,
-    nextUnlock: nextMembershipMonth(cfg, month)
+    nextUnlock: on ? nextMembershipMonth(cfg, month) : null
   };
 }
 
@@ -49,6 +60,7 @@ export type TurnInput = { ip: string | null; device: string | null; ipLimits: bo
 export type TurnOk = { ok: true; turn: Turn; gift: Gift };
 
 export async function takeTurn(db: DialDb, cfg: Cfg, input: TurnInput, now = new Date(), rand?: () => number): Promise<TurnOk | Fail> {
+  if (cfg.enabled === false) return fail(503, `The dial is resting right now. Call ${cfg.phone} and we'll take care of you.`, { reason: 'paused' });
   const since = dayAgo(now);
   const limitMsg = `That's all the turns for today. Call ${cfg.phone} and we'll take care of you.`;
   if (input.device && (await db.countTurns(since, { device: input.device })) >= cfg.limits.turnsPerDevicePerDay) return fail(429, limitMsg, { reason: 'limit' });
@@ -61,7 +73,7 @@ export async function takeTurn(db: DialDb, cfg: Cfg, input: TurnInput, now = new
 
   // In play when the month is in season and nobody has claimed it or holds it right now.
   let available = false;
-  if (inSeason(cfg, month)) {
+  if (membershipActive(cfg) && inSeason(cfg, month)) {
     const m = await db.membership(month);
     available = !m || (!m.claimed_at && new Date(m.held_until) < now);
   }
@@ -74,7 +86,7 @@ export async function takeTurn(db: DialDb, cfg: Cfg, input: TurnInput, now = new
 
   const turn: Turn = {
     id, gift: gift.id, mem_month: memMonth, ip: input.ip, device: input.device,
-    created_at: now.toISOString(), held_until: until.toISOString(), claimed_at: null, entry_id: null
+    created_at: now.toISOString(), held_until: until.toISOString(), claimed_at: null, entry_id: null, config_version: cfg.version || 0
   };
   try { await db.insertTurn(turn); }
   catch (e) { if (memMonth) await db.releaseMembership(memMonth, id, now).catch(() => {}); throw e; }

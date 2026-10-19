@@ -11,6 +11,7 @@ const API = 'https://a.klaviyo.com/api';
 const REVISION = '2025-01-15';
 export const METRIC_WON = 'Comfort Dial Won';
 export const METRIC_REDEEMED = 'Comfort Dial Redeemed';
+export const METRIC_VOIDED = 'Comfort Dial Voided';
 
 export const klaviyoConfigured = (env: unknown) => !!envVar(env, 'KLAVIYO_PRIVATE_KEY');
 const e164 = (tenDigits: string) => `+1${tenDigits}`;
@@ -39,15 +40,16 @@ export function wonEvent(e: Entry, gift: Gift, cfg: Cfg) {
   };
 }
 
-export function redeemedEvent(e: Entry, gift: Gift, now: Date) {
+export function redeemedEvent(e: Entry, gift: Gift, now: Date, metric = METRIC_REDEEMED) {
+  const suffix = metric === METRIC_VOIDED ? `voided-${now.getTime()}` : 'redeemed';
   return {
     data: {
       type: 'event',
       attributes: {
         properties: { code: e.code, gift_id: gift.id, gift_name: gift.name, source: 'Comfort Dial' },
         time: now.toISOString(),
-        unique_id: `${e.code}-redeemed`,
-        metric: { data: { type: 'metric', attributes: { name: METRIC_REDEEMED } } },
+        unique_id: `${e.code}-${suffix}`,
+        metric: { data: { type: 'metric', attributes: { name: metric } } },
         profile: profile(e)
       }
     }
@@ -98,4 +100,6 @@ export async function sendWon(env: unknown, e: Entry, gift: Gift, cfg: Cfg) {
   if (e.sms_marketing) await post(env, 'profile-subscription-bulk-create-jobs', smsSubscribeJob(e, envVar(env, 'KLAVIYO_SMS_LIST_ID')));
 }
 export const sendRedeemed = (env: unknown, e: Entry, gift: Gift, now = new Date()) => post(env, 'events', redeemedEvent(e, gift, now));
+/** A code voided in the admin: the reminder flow filters on this too, so a voided code gets no more reminders. */
+export const sendVoided = (env: unknown, e: Entry, gift: Gift, now = new Date()) => post(env, 'events', redeemedEvent(e, gift, now, METRIC_VOIDED));
 export const sendProfile = (env: unknown, e: Entry) => post(env, 'profile-import', profileImport(e));

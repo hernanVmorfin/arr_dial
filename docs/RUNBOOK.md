@@ -7,8 +7,12 @@ Setup, launch, the 50/50 test, and operations. Nothing reaches visitors until st
 In order. Each step is safe to stop after.
 
 1. **Supabase**: SQL Editor in project `dienlkpgmgetkkdyduap` (the Instant Pricing project) → run
-   `supabase/migrations/20261016_comfort_dial.sql`. It only creates the three `comfort_dial_*` tables. If an empty
-   `dial_entries` table exists from the earlier PR #10 migration, it can be dropped; nothing reads it.
+   `supabase/migrations/20261016_comfort_dial.sql`, then `supabase/migrations/20261019_comfort_dial_admin.sql` (the
+   admin's tables and the results function). They only create `comfort_dial_*` objects. If an empty `dial_entries`
+   table exists from the earlier PR #10 migration, it can be dropped; nothing reads it.
+   **First admin**: Authentication → Users → Add user → email + password, auto-confirm. Then in the SQL editor:
+   `insert into public.comfort_dial_admins (email, name) values ('jason@arrhvac.com', 'Jason');`. Everyone after
+   that is added from the admin's Team tab.
 2. **Webflow Cloud app**: Webflow → site → Webflow Cloud → new app from GitHub `hernanVmorfin/arr_dial`, branch
    `main`, root directory `/` (the repo root), mount path **`/dial`**. ARR already runs two apps this way
    (`/pricing-app` and `/instant_pricing`). The builder runs `astro build`; `dial.js` is built by a hook in
@@ -34,6 +38,7 @@ In order. Each step is safe to stop after.
    - **`yourIp` must be your own public IP.** If it shows the same address for everyone (a Webflow proxy), set
      `DIAL_IP_LIMITS=off`, or the per-IP limits will block real visitors.
    - `https://www.alwaysreadyrepair.com/dial/` should open the dial.
+   - `https://www.alwaysreadyrepair.com/dial/admin` should ask you to sign in, and let the first admin in.
 5. **Monday**:
    - Add a status column **Code status** to the Instant Pricing Leads board with labels `Issued`, `Redeemed`,
      `Expired`. Put its column id in `MONDAY_CODE_STATUS_COLUMN`.
@@ -46,11 +51,11 @@ In order. Each step is safe to stop after.
    Custom code → Footer code:
 
    ```html
-   <script>window.__ARR_DIAL__={split:0.5}</script>
    <script type="module" src="/dial/dial.js"></script>
    ```
 
-   Publish. The 50/50 test is now running.
+   Publish. The 50/50 test is now running at the split set in the admin (Settings → Visitors who get the popup,
+   50% to start). Don't put `split` or the other popup settings in the embed: the admin's win anyway.
 8. **Live test**: open `https://www.alwaysreadyrepair.com/?dial=1`, turn, claim with your own phone. Confirm the
    text, the Monday item and the Klaviyo event. Then run `ARRDial.reset()` in the browser console and delete your row
    in `comfort_dial_entries` (and its turn in `comfort_dial_turns`). Each test needs a different phone.
@@ -58,21 +63,25 @@ In order. Each step is safe to stop after.
    "Comfort Dial Won" metric, then set it live.
 10. **GA4**: in GTM, add GA4 event tags for the `dial_*` events below, and a user property `dial_variant` from the
     data layer.
-11. **Rules**: after the legal read, set `"rulesFinal": true` in `data/dial.json` and push. The draft banner on
+11. **Rules**: after the legal read, admin → Settings → **The rules are final** → publish. The draft banner on
     `/dial/rules` goes away.
 
-**Rollback** at any point: remove the two embed lines and republish. The app and tables can stay; nothing calls
-them without the embed. To pause without republishing Webflow, remove `SUPABASE_SECRET_KEY`: the popup stops opening
-by itself and buttons show a call-us message.
+**Rollback** at any point: remove the embed line and republish. The app and tables can stay; nothing calls them
+without the embed. To pause without touching Webflow: admin → **Pause the dial**. The popup stops opening by itself,
+no new turns are taken, and buttons show a call-us message. (Removing `SUPABASE_SECRET_KEY` still works as a last
+resort, but it takes the admin down too.)
 
 ## The 50/50 test
 
-`split: 0.5` puts each new visitor in the `dial` or `control` group (kept in their browser). Control never sees the
-popup open by itself or the side tab; `?dial=1` links and buttons still work for them, so ads can point anywhere.
+The admin's split (Settings → Visitors who get the popup) puts each visitor in the `dial` or `control` group. Each
+browser keeps a random number and is in `dial` while it is below the split, so changing the split only moves the
+visitors in between (50% → 100% moves the whole control group into `dial`; nobody already in `dial` leaves). Control
+never sees the popup open by itself or the side tab; `?dial=1` links and buttons still work for them, so ads can
+point anywhere.
 
 Every data-layer event carries `dial_variant`. Compare, per visitor, by group for 2 weeks: phone taps
 (`dial_call_clicked` plus the site's own call tracking), Book Service visits, and booked jobs. If the dial group
-books more, set `split: 1`. If it books less, set `split: 0` (or remove the embed).
+books more, set the split to 100%. If it books less, set it to 0% (or remove the embed).
 
 | Event | When |
 |---|---|
@@ -88,26 +97,39 @@ books more, set `split: 1`. If it books less, set `split: 0` (or remove the embe
 
 ## Configuration
 
-`data/dial.json` (push to deploy):
-- `gifts`: odds (`weight`), dollar `value`, names. `zones` place them on the dial; keep each gift's zones summing to
-  its weight, and run `npm test`.
-- `membership.months`: which months have a free year. A month not listed has none.
-- `expiresDays`, `holdMinutes`, `limits`, `zipPrefixes`, `phone`, `bookUrl`, `rulesFinal`.
+The admin (`/dial/admin`) edits and publishes everything visitors see: promos, odds, dial layout, popup settings,
+limits, contact details, rules status. Each publish is a row in `comfort_dial_config`; the newest is live, and the
+dial, the rules page and new turns pick it up within 15 seconds. History → Restore publishes an old one again.
 
-Embed options (`window.__ARR_DIAL__`): `split` (0.5), `delayMs` (2000), `snoozeDays` (7), `excludePaths`, `tab`
-(true), `debug` (false, logs events to the console), `apiBase` (only if dial.js is served from elsewhere).
+`data/dial.json` is version 0, the config until the first publish and the fallback if Supabase can't be read.
+Not in the admin yet: `membership.months`, which months have a free year. Every publish carries them over from the
+version before, so after the first publish, changing them is a developer job (or a future Settings field).
+
+Embed options (`window.__ARR_DIAL__`), all optional: `debug` (false, logs events to the console), `apiBase` (only if
+dial.js is served from elsewhere), `logoUrl`. Popup settings set here (`split`, `delayMs`, ...) are overridden by the
+admin's; `force: {...}` overrides the admin (the QA page at `/dial/` uses it).
 
 ## Operations
 
-- **Find a code**: Monday (the code is in the item name), or Supabase `comfort_dial_entries` by `code` or `phone`.
+- **Find a code**: admin → Codes (code, phone, name or street), or Monday (the code is in the item name).
 - **Redeem**: CSR sets Code status → Redeemed (see CSR-GUIDE.md). The webhook fills `redeemed_at`. If the webhook is
-  down, set `redeemed_at` by hand in Supabase.
+  down, admin → Codes → Mark redeemed (it also sets Monday's Code status).
+- **Void, restore, extend, text again**: admin → Codes. Void sets Monday's Code status to `Void` (Monday adds the
+  label the first time) and sends Klaviyo "Comfort Dial Voided", which stops the reminders once the flow filters on
+  it (KLAVIYO.md). Extending updates Monday's notes; reminder texts already queued keep the old date. Resends are
+  capped at 3 a day per code.
+- **Who changed what**: History (configs) and each code's history (code actions); everything, including sign-ins,
+  is in Supabase `comfort_dial_audit`.
+- **Locked out**: 8 wrong passwords in 15 minutes pause sign-in for that email and that connection for 15 minutes.
+  It clears itself.
+- **Forgotten admin password**: reset it in Supabase → Authentication → Users. (Removing and re-adding someone in
+  the Team tab keeps their old password, because the account already exists.)
 - **If Monday was down** when someone won, the win is still in `comfort_dial_entries` with `monday_item_id` empty.
   Errors are logged as `dial win` in the Webflow Cloud logs.
 - **Reopen a month's free year** (a test win, a refund): delete the entry, then set `claimed_at` to null on that
   month's row in `comfort_dial_memberships`.
-- **Change gifts or odds**: edit `data/dial.json`, `npm test`, push. The dial, the odds panel and the rules page all
-  redraw from it.
+- **Change gifts or odds**: admin → Promos & odds → Review & publish. The dial, the odds panel and the rules page all
+  redraw from it. Turns already taken keep the odds they were played under (`comfort_dial_turns.config_version`).
 
 ## Known limits
 

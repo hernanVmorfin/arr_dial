@@ -3,9 +3,9 @@
  * logged and never undoes the win, which is already stored with its code. */
 import type { DialDb, Entry } from './db.ts';
 import type { Cfg, Gift } from './dial.ts';
-import { createDialItem, mondayConfigured, updateDialItem } from './monday.ts';
+import { createDialItem, mondayConfigured, syncDialItem, updateDialItem } from './monday.ts';
 import { podiumConfigured, sendCodeText } from './podium.ts';
-import { klaviyoConfigured, sendProfile, sendRedeemed, sendWon } from './klaviyo.ts';
+import { klaviyoConfigured, sendProfile, sendRedeemed, sendVoided, sendWon } from './klaviyo.ts';
 
 async function settle(label: string, tasks: Record<string, () => Promise<unknown>>) {
   const names = Object.keys(tasks);
@@ -37,6 +37,16 @@ export async function announceDetails(env: unknown, db: DialDb, cfg: Cfg, e: Ent
   };
   if (klaviyoConfigured(env)) tasks.klaviyo = () => sendProfile(env, e);
   return settle('details', tasks);
+}
+
+/** A code changed in the admin. Monday's item follows (status label, expiry in the CSR block); Klaviyo hears about a
+ *  redemption or a void so the reminders stop. A restore or an extension can't recall reminders already queued. */
+export function announceCodeChange(env: unknown, cfg: Cfg, e: Entry, gift: Gift, action: 'redeem' | 'void' | 'restore' | 'extend') {
+  const tasks: Record<string, () => Promise<unknown>> = {};
+  if (mondayConfigured(env) && e.monday_item_id) tasks.monday = () => syncDialItem(env, e.monday_item_id!, e, gift, cfg);
+  if (klaviyoConfigured(env) && action === 'redeem') tasks.klaviyo = () => sendRedeemed(env, e, gift);
+  if (klaviyoConfigured(env) && action === 'void') tasks.klaviyo = () => sendVoided(env, e, gift);
+  return settle(`admin ${action}`, tasks);
 }
 
 export function announceRedeemed(env: unknown, e: Entry, gift: Gift) {

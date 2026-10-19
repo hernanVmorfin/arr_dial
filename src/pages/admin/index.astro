@@ -1,0 +1,60 @@
+---
+/* <base>admin — the Comfort Dial admin. The middleware has already checked the session; everything on the page is
+ * drawn by src/admin/app.js from the /api/admin/* calls. Tabs: Promos & odds, Settings, Codes, Results, History,
+ * Team. */
+import '../../admin/admin.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const admin = Astro.locals.admin!;
+const LOGO = 'https://cdn.prod.website-files.com/67706112234589f93fe7a263/6770706cd327b7c71e895d05_Main%20Logo.svg';
+const boot = { base, me: { email: admin.email, name: admin.name } };
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Comfort Dial Admin | Always Ready Repair</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,700..900&family=Oswald:wght@500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="top-in">
+        <img src={LOGO} alt="Always Ready Repair" />
+        <div class="title"><b>Comfort Dial</b> · Admin</div>
+        <div class="grow"></div>
+        <a class="btn ghost sm" href={`${base}rules`} target="_blank" rel="noopener">Rules page</a>
+        <a class="btn ghost sm" href={`${base}?dial=1`} target="_blank" rel="noopener">Open the dial</a>
+        <div class="me">
+          <button type="button" id="meBtn" aria-haspopup="true" aria-expanded="false">{admin.name} ▾</button>
+          <div class="menu" id="meMenu" hidden>
+            <div class="who"><b>{admin.name}</b><br /><span class="muted">{admin.email}</span></div>
+            <a class="narrow-only" href={`${base}rules`} target="_blank" rel="noopener">Rules page</a>
+            <a class="narrow-only" href={`${base}?dial=1`} target="_blank" rel="noopener">Open the dial</a>
+            <button type="button" data-act="password">Change my password</button>
+            <button type="button" data-act="signout">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+    <div class="state" id="state"></div>
+    <nav class="tabs" id="tabs" aria-label="Sections">
+      <a href="#promos" data-tab="promos">Promos &amp; odds</a>
+      <a href="#settings" data-tab="settings">Settings</a>
+      <a href="#codes" data-tab="codes">Codes</a>
+      <a href="#results" data-tab="results">Results</a>
+      <a href="#history" data-tab="history">History</a>
+      <a href="#team" data-tab="team">Team</a>
+    </nav>
+    <main id="main" aria-live="polite"><p class="muted">Loading…</p></main>
+    <div class="draftbar" id="draftbar" hidden></div>
+    <div class="toasts" id="toasts" aria-live="assertive"></div>
+    <script type="application/json" id="boot" set:html={JSON.stringify(boot).replace(/</g, '\\u003c')}></script>
+    <script>
+      import '../../admin/app.js';
+    </script>
+  </body>
+</html>

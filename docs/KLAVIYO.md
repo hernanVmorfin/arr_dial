@@ -1,7 +1,9 @@
 # Comfort Dial: Klaviyo reminder flow
 
-Each win sends Klaviyo a **Comfort Dial Won** event. When the CSR sets Code status to Redeemed in Monday, the app
-sends **Comfort Dial Redeemed**. The flow reminds winners at day 7 and day 25 and stops once they've redeemed.
+Each win sends Klaviyo a **Comfort Dial Won** event. When the CSR sets Code status to Redeemed in Monday (or someone
+marks it redeemed in the admin), the app sends **Comfort Dial Redeemed**. A code voided in the admin sends
+**Comfort Dial Voided**. The flow reminds winners at day 7 and day 25 and stops once they've redeemed or been
+voided.
 
 Reminder texts go only to winners who ticked "Also text me a reminder…" on the claim screen. That box is the SMS
 marketing consent; the app records it in Klaviyo with a subscription job (source "Comfort Dial"). The code itself is
@@ -30,7 +32,9 @@ Do this after the launch test (RUNBOOK step 8) has sent the first event, so the 
 1. Flows → Create flow → Build your own. Name it **Comfort Dial reminders**.
 2. **Trigger**: Metric → **Comfort Dial Won**.
 3. **Flow filter**: "What someone has done (or not done)" → **Comfort Dial Redeemed** → zero times → since starting
-   this flow. Anyone who redeems exits before the next message.
+   this flow, **AND** **Comfort Dial Voided** → zero times → since starting this flow. Anyone who redeems, or whose
+   code is voided, exits before the next message. (The Voided metric appears in Klaviyo after the first void; add
+   the second condition then.)
 4. **Time delay**: 7 days.
 5. **SMS**, day 7:
 

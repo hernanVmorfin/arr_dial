@@ -1,8 +1,7 @@
 import type { APIRoute } from 'astro';
-import DIAL from '../../../data/dial.json';
 import { addDetails, giftById } from '../../lib/dial.ts';
 import { announceDetails } from '../../lib/fanout.ts';
-import { afterResponse, dbFor, envOf } from '../../lib/runtime.ts';
+import { afterResponse, configFor, dbFor, envOf } from '../../lib/runtime.ts';
 import { json, preflight, readJson } from '../../lib/http.ts';
 
 /* POST /api/details { turn, firstName?, street, zip } → { ok } — the optional "book faster" step after a win.
@@ -10,6 +9,7 @@ import { json, preflight, readJson } from '../../lib/http.ts';
 export const POST: APIRoute = async ({ request, locals }) => {
   const env = envOf(locals);
   const db = dbFor(env);
+  const DIAL = await configFor(db);
   if (!db) return json(request, { error: `Call ${DIAL.phone} and we'll take it from here.` }, 503);
   const body = await readJson(request);
   if (!body) return json(request, { error: 'Bad request.' }, 400);
