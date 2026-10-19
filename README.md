@@ -10,6 +10,7 @@ A Webflow Cloud app (Astro on Cloudflare Workers) mounted at `alwaysreadyrepair.
 |---|---|
 | `/dial/dial.js` | The popup. One script tag in Webflow site-wide custom code. |
 | `/dial/api/status` · `turn` · `claim` · `details` | The popup's API. The server picks every gift. |
+| `/dial/api/weather` | Outside weather where the visitor is (Cloudflare's IP estimate, no prompt; National Weather Service). |
 | `/dial/api/redeemed` | Monday webhook: Code status set to Redeemed. |
 | `/dial/api/health` | Build and integration check (`?deep=1` also reads Supabase). |
 | `/dial/rules` | Official rules, generated from `data/dial.json`. |

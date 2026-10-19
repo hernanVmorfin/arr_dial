@@ -88,6 +88,13 @@ export function validateAddress(body, cfg) {
   return { ok: true, data: { street, zip } };
 }
 
+/** The gift ring on the thermostat screen, in SVG units of its 400-wide face (src/widget/index.js). The top prize's
+ *  slice is pushed outward by `raise`: deeper, never wider, because a slice's angle is its odds. `big` and `small` are
+ *  the largest label sizes before they shrink to fit their arc. */
+export const RING = { inner: 88, outer: 130, raise: 16, big: 17, small: 8.6 };
+/** Where the two label lines of a slice sit, given that slice's outer radius. */
+export const labelRadii = (outer) => ({ big: RING.inner + (outer - RING.inner) * 0.66, small: RING.inner + (outer - RING.inner) * 0.27 });
+
 /** Font size (SVG units) for a curved dial label: as large as `max`, shrunk to fit its arc. Oswald 600 averages
  *  about half an em per character, so `perChar` 0.52 leaves a little air at each end. */
 export function labelFontSize(text, arcUnits, max, perChar = 0.52) {
