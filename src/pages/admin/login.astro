@@ -1,0 +1,59 @@
+---
+/* <base>admin/login — the admin's only open page. Signs in with Supabase Auth (email + password); the account must
+ * also be on comfort_dial_admins. Already signed in: straight to the admin. */
+import '../../admin/admin.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+if (Astro.locals.admin) return Astro.redirect(`${base}admin`);
+const next = Astro.url.searchParams.get('next') || '';
+const safeNext = next.startsWith(`${base}admin`) && !next.startsWith('//') ? next : `${base}admin`;
+const LOGO = 'https://cdn.prod.website-files.com/67706112234589f93fe7a263/6770706cd327b7c71e895d05_Main%20Logo.svg';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Sign in | Comfort Dial Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,700..900&family=Oswald:wght@500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="signin">
+      <div style="width:min(420px,100%)">
+        <img src={LOGO} alt="Always Ready Repair" style="height:40px;margin:0 0 18px" />
+        <div class="card">
+          <p class="eyebrow">Comfort Dial</p>
+          <h1>Admin sign-in</h1>
+          <form id="f" novalidate data-next={safeNext} data-api={`${base}api/admin/login`}>
+            <label class="f"><span>Email</span><input type="email" name="email" autocomplete="username" required /></label>
+            <label class="f"><span>Password</span><input type="password" name="password" autocomplete="current-password" required /></label>
+            <p class="err" id="err" role="alert"></p>
+            <button class="btn red" type="submit">Sign in</button>
+          </form>
+          <p class="small muted" style="margin:16px 0 0">No account or forgot your password? Ask another dial admin to add you or reset it.</p>
+        </div>
+      </div>
+    </div>
+    <script>
+      const f = document.getElementById('f') as HTMLFormElement;
+      const err = document.getElementById('err')!;
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const b = f.querySelector('button')!;
+        const data = Object.fromEntries(new FormData(f));
+        if (!data.email || !data.password) { err.textContent = 'Enter your email and password.'; return; }
+        b.disabled = true; err.textContent = '';
+        try {
+          const r = await fetch(f.dataset.api!, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) });
+          const j = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+          if (r.ok && j.ok) { location.href = f.dataset.next! + (/^#[a-z]+$/.test(location.hash) ? location.hash : ''); return; }
+          err.textContent = j.error || 'That didn\'t work. Try again.';
+        } catch { err.textContent = 'We couldn\'t reach the server. Check your connection.'; }
+        b.disabled = false;
+      });
+    </script>
+  </body>
+</html>

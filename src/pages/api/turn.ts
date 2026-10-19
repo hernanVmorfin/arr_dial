@@ -1,17 +1,18 @@
 import type { APIRoute } from 'astro';
-import DIAL from '../../../data/dial.json';
 import { takeTurn } from '../../lib/dial.ts';
-import { dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
+import { configFor, dbFor, envOf, ipLimitsOn } from '../../lib/runtime.ts';
 import { envVar } from '../../lib/env.ts';
 import { verifyTurnstile } from '../../lib/turnstile.ts';
 import { clientIp, json, preflight, readJson } from '../../lib/http.ts';
 
 /* POST /api/turn { device, token } → { ok, turn, heldUntil, holdSeconds, gift }
- * Picks the gift here, never in the browser, and holds it for holdMinutes. `turn` is the claim token. */
+ * Picks the gift here, never in the browser, by the live config's odds, and holds it for holdMinutes. `turn` is the
+ * claim token. 503 reason:'paused' while the dial is switched off in the admin. */
 export const POST: APIRoute = async (ctx) => {
   const { request, locals } = ctx;
   const env = envOf(locals);
   const db = dbFor(env);
+  const DIAL = await configFor(db);
   if (!db) return json(request, { error: `The dial is resting right now. Call ${DIAL.phone} and we'll take care of you.` }, 503);
   const body = await readJson(request);
   if (!body) return json(request, { error: 'Bad request.' }, 400);

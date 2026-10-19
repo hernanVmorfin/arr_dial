@@ -28,6 +28,7 @@ export function pasteBlock(e: Entry, gift: Gift, cfg: Cfg) {
     `Phone: ${fmtPhone(e.phone)}${e.first_name ? ` · ${e.first_name}` : ''}`,
     `Address: ${e.address ? `${e.address}, ${e.zip}${isMem ? ' (matched to county record; the free year is tied to this home)' : ''}` : 'not given yet'}`,
     `Expires: ${chicagoDate(e.expires_at)}`,
+    e.voided_at ? `VOID: ${e.voided_note || 'cancelled in the admin'}. Do not honor this code.` : null,
     `Texts: code sent by Podium · reminders ${e.sms_marketing ? 'yes (Klaviyo)' : 'no'}`,
     `NEXT: when they call, check the phone matches, search the board for their street to make sure the home hasn't redeemed a dial code before, put the service address on this item, apply the gift in Sera, then set Code status to Redeemed.`,
     utmText(e.utm) ? `UTM: ${utmText(e.utm)}` : null
@@ -88,6 +89,17 @@ export async function updateDialItem(env: unknown, itemId: string, e: Entry, gif
   const values: Record<string, unknown> = { name: itemName(e, gift), [C.quote]: { text: pasteBlock(e, gift, cfg) } };
   if (e.address) values[C.address] = `${e.address}, ${e.zip}`;
   await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c) { id } }',
+    { b: envVar(env, 'MONDAY_BOARD_ID'), i: itemId, c: JSON.stringify(values) });
+}
+
+/** After a change in the admin (redeem, void, restore, extend): Code status to match and the CSR's block redone.
+ *  "Void" is a new label; Monday adds it to the column the first time. Setting Redeemed here fires the board's
+ *  webhook back at /api/redeemed, which finds the code already redeemed and does nothing. */
+export async function syncDialItem(env: unknown, itemId: string, e: Entry, gift: Gift, cfg: Cfg) {
+  const col = envVar(env, 'MONDAY_CODE_STATUS_COLUMN');
+  const values: Record<string, unknown> = { [MONDAY_COLUMNS.quote]: { text: pasteBlock(e, gift, cfg) } };
+  if (col) values[col] = { label: e.voided_at ? 'Void' : e.redeemed_at ? 'Redeemed' : 'Issued' };
+  await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c, create_labels_if_missing: true) { id } }',
     { b: envVar(env, 'MONDAY_BOARD_ID'), i: itemId, c: JSON.stringify(values) });
 }
 

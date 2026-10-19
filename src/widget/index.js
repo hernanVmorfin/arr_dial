@@ -1,36 +1,51 @@
 /* Comfort Dial: the gift popup for alwaysreadyrepair.com. Builds to <base>/dial.js (astro.config.mjs) and drops into
  * Webflow site-wide custom code with:
- *   <script>window.__ARR_DIAL__={split:0.5}</script>
  *   <script type="module" src="/dial/dial.js"></script>
+ *
+ * Gifts, odds, the dial layout and when it opens by itself all come from /api/status: the live config published in
+ * the admin (<base>admin). data/dial.json is bundled only as the fallback drawn before that answer arrives.
  *
  * A round wall thermostat: gifts sit on a 50–90°F scale, arc length = the real odds, the free year at 72°.
  * Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never this file, and holds it for
  * 10 minutes), then a mobile number claims it (/api/claim). A free-year winner also gives a home address.
  *
- * Opens by itself ~2 s after the page shows on a first visit, for visitors in the dial half of the test, on any page
- * not in excludePaths. Never on top of the pricing popup, never after a win, not again for snoozeDays after it was
- * seen. ?dial=1 in the URL, [data-arr-dial="open"] clicks and window.ARRDial.open() always open it.
+ * Opens by itself delayMs after the page shows on a first visit, for visitors in the dial share of the test (split),
+ * on any page not in excludePaths. Never on top of the pricing popup, never after a win, not again for snoozeDays
+ * after it was seen, never while the dial is paused in the admin. ?dial=1 in the URL, [data-arr-dial="open"] clicks
+ * and window.ARRDial.open() always open it.
+ * Those settings are the admin's. window.__ARR_DIAL__ can still set them, but the admin's win once /api/status
+ * answers; `force: {...}` in it wins over the admin (the QA page uses that).
  * Vanilla JS, every class prefixed arrd- and every rule under .arrd-root, because it lives on someone else's page. */
-import DIAL from '../../data/dial.json';
-import { labelFontSize, arcUnits } from '../lib/rules.js';
+import BUILT_IN from '../../data/dial.json';
+import { svgInner, buildRing as drawRing, drawFace, angToF, fToAng, A0, A1 } from './face.js';
 
+const EMBED = window.__ARR_DIAL__ || {};
 const CFG = Object.assign({
   apiBase: null,
-  split: 0.5,            // share of visitors who get the popup during the 50/50 test; 1 = everyone, 0 = no one
-  delayMs: 2000,
-  snoozeDays: 7,
-  excludePaths: ['/instant-pricing', '/about/transparent-pricing', '/book-service', '/contact-us', '/financing-offers', '/pay'],
+  ...BUILT_IN.popup,     // split (share of visitors who get the popup; 1 = everyone, 0 = no one), delayMs, snoozeDays, excludePaths, tab
   logoUrl: 'https://cdn.prod.website-files.com/67706112234589f93fe7a263/6770706cd327b7c71e895d05_Main%20Logo.svg',
-  tab: true,
   debug: false
-}, window.__ARR_DIAL__ || {});
+}, EMBED, EMBED.force || {});
 
 const API = CFG.apiBase ? new URL(String(CFG.apiBase).replace(/\/?$/, '/'), location.href).href : new URL(/* @vite-ignore */ 'api/', import.meta.url).href;
 const RULES_URL = new URL('../rules', API).href;
 const STORE = 'arr-dial';
-const GIFTS = Object.fromEntries(DIAL.gifts.map((g) => [g.id, g]));
-const MEM = DIAL.membership.giftId;
-const TEL = DIAL.phone.replace(/\D/g, '');
+
+/* The live config. Starts as the bundled fallback; applyDial() swaps in the admin's when /api/status answers. */
+let DIAL = { ...BUILT_IN, gifts: BUILT_IN.gifts.filter((g) => g.active !== false) };
+let GIFTS = {}, MEM = '', TEL = '';
+const index = () => { GIFTS = Object.fromEntries(DIAL.gifts.map((g) => [g.id, g])); MEM = DIAL.membership.giftId; TEL = DIAL.phone.replace(/\D/g, ''); };
+index();
+function applyDial(d) {
+  if (!d || !Array.isArray(d.gifts) || !Array.isArray(d.zones)) return;
+  DIAL = { ...DIAL, phone: d.phone, bookUrl: d.bookUrl, expiresDays: d.expiresDays, holdMinutes: d.holdMinutes, gifts: d.gifts, zones: d.zones, membership: { ...DIAL.membership, giftId: d.membershipGiftId } };
+  index();
+  if (d.popup) Object.assign(CFG, d.popup, EMBED.force || {});
+  if (root) {
+    buildFace(); renderOdds();
+    root.querySelectorAll('[data-arrd="call"]').forEach((a) => { a.href = `tel:${TEL}`; if (/^Call\b/.test(a.textContent) && a.textContent !== 'Call to book') a.textContent = `Call ${DIAL.phone}`; });
+  }
+}
 
 /* ---------------- state that outlives the page: the device id, test group, a held gift, a win ---------------- */
 const store = {
@@ -40,8 +55,18 @@ const store = {
 const uuid = () => { try { return crypto.randomUUID(); } catch (e) { return 'd' + Math.random().toString(36).slice(2) + Date.now().toString(36); } };
 const saved = store.get();
 const device = saved.device || uuid();
-const variant = CFG.split >= 1 ? 'dial' : CFG.split <= 0 ? 'control' : saved.variant || (Math.random() < CFG.split ? 'dial' : 'control');
-store.set({ device, variant });
+/* Each browser keeps one roll in [0,1) and is in the dial group while roll < split, so moving the split in the admin
+ * only moves the visitors between the old and new split. A browser grouped before rolls were kept gets one that
+ * matches its group. */
+const roll = typeof saved.roll === 'number' ? saved.roll
+  : saved.variant === 'dial' ? Math.random() * 0.5 : saved.variant === 'control' ? 0.5 + Math.random() * 0.5 : Math.random();
+let variant = null;
+function assign() {
+  variant = CFG.split >= 1 ? 'dial' : CFG.split <= 0 ? 'control' : roll < CFG.split ? 'dial' : 'control';
+  store.set({ variant });
+}
+store.set({ device, roll });
+assign();   // from the bundled settings for now; again once /api/status brings the admin's
 
 /* ---------------- tracking: GTM dataLayer (dial_variant rides on every event for the 50/50 read) ---------------- */
 const UTM = {};
@@ -132,26 +157,7 @@ const MARKUP = `
   <section class="arrd-sec arrd-center" data-arrd="play">
     <h2 class="arrd-h" id="arrd-title">Turn the dial</h2>
     <p class="arrd-lede">Every turn wins a real gift. Odds are posted.</p>
-    <svg class="arrd-svg" data-arrd="svg" viewBox="-172 -172 344 344" role="img" tabindex="0" aria-label="Comfort Dial thermostat with gifts on a 50 to 90 degree scale. Press Turn the dial.">
-      <defs>
-        <linearGradient id="arrd-metal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f9f7f8"/><stop offset=".38" stop-color="#c9d4e2"/><stop offset=".55" stop-color="#f9f7f8"/><stop offset="1" stop-color="#a9bcd6"/></linearGradient>
-        <radialGradient id="arrd-face" cx="50%" cy="38%" r="65%"><stop offset="0" stop-color="#1b3050"/><stop offset="1" stop-color="#0f1f3d"/></radialGradient>
-      </defs>
-      <g data-arrd="ring"></g>
-      <circle r="151" fill="url(#arrd-face)" stroke="#0b1830" stroke-width="3"/>
-      <g data-arrd="face"></g>
-      <text x="-46" y="124" text-anchor="middle" fill="#03bce6" font-family="Oswald, sans-serif" font-weight="600" font-size="11" letter-spacing="2">COOL</text>
-      <text x="46" y="124" text-anchor="middle" fill="#ee292f" font-family="Oswald, sans-serif" font-weight="600" font-size="11" letter-spacing="2">HEAT</text>
-      <text y="141" text-anchor="middle" fill="#a9bcd6" font-family="Oswald, sans-serif" font-size="8.5" letter-spacing="1.6">ARR · SINCE 1935</text>
-      <circle r="66" fill="#0b1830" stroke="#f9f7f8" stroke-opacity=".14" stroke-width="2"/>
-      <text data-arrd="hubLabel" y="-25" text-anchor="middle" fill="#a9bcd6" font-family="Oswald, sans-serif" font-size="10" letter-spacing="1.8">SET TO</text>
-      <text data-arrd="hubMain" y="11" text-anchor="middle" fill="#f9f7f8" font-family="Archivo, Arial Black, sans-serif" font-weight="900" font-size="33" style="font-stretch:125%">68°</text>
-      <text data-arrd="hubSub" y="33" text-anchor="middle" fill="#ffcc04" font-family="Oswald, sans-serif" font-weight="600" font-size="10.5" letter-spacing=".8">TAP TO TURN</text>
-      <g data-arrd="marker">
-        <line x1="0" y1="-69" x2="0" y2="-90" stroke="#f9f7f8" stroke-width="7" stroke-linecap="round"/>
-        <line x1="0" y1="-69" x2="0" y2="-90" stroke="#ee292f" stroke-width="3.5" stroke-linecap="round"/>
-        <path d="M -9 -170 L 9 -170 L 0 -152 Z" fill="#ee292f" stroke="#14284e" stroke-width="1.5" stroke-linejoin="round"/>
-      </g>
+    <svg class="arrd-svg" data-arrd="svg" viewBox="-172 -172 344 344" role="img" tabindex="0" aria-label="Comfort Dial thermostat with gifts on a 50 to 90 degree scale. Press Turn the dial.">${svgInner()}
     </svg>
     <p class="arrd-scar" data-arrd="scar" aria-live="polite"></p>
     <p class="arrd-err" data-arrd="playErr" role="alert"></p>
@@ -166,58 +172,14 @@ const MARKUP = `
   <section class="arrd-sec" data-arrd="msg" hidden></section>
 </div>`;
 
-/* ---------------- dial geometry ---------------- */
-const NS = 'http://www.w3.org/2000/svg';
-const A0 = -135, A1 = 135, F0 = 50, F1 = 90, DPF = (A1 - A0) / (F1 - F0);
-const Z_OUT = 146, Z_IN = 94, R_BIG = 127, R_SMALL = 105;
-const pt = (a, r) => { const t = a * Math.PI / 180; return [r * Math.sin(t), -r * Math.cos(t)]; };
-const el = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
-const angToF = (a) => F0 + (a - A0) / DPF;
-const fToAng = (f) => A0 + (f - F0) * DPF;
-const arcPath = (a0, a1, r) => { const [x0, y0] = pt(a0, r), [x1, y1] = pt(a1, r); return `M${x0} ${y0} A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1} ${y1}`; };
-
+/* ---------------- dial geometry (face.js draws it) ---------------- */
 let root, tab, $, segs = [], ang = fToAng(68), lastF = null, busy = false, memOpen = true, isOpen = false, lastFocus = null, ac = null;
-let statusLoaded = false, clock = null;
+let statusLoaded = false, clock = null, paused = false;
 const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function buildRing() {
-  const ring = $('ring');
-  ring.appendChild(el('circle', { r: 168, fill: 'url(#arrd-metal)', stroke: '#a9bcd6', 'stroke-width': 1 }));
-  for (let i = 0; i < 120; i++) {
-    const [x1, y1] = pt(i * 3, 157), [x2, y2] = pt(i * 3, 166);
-    ring.appendChild(el('line', { x1, y1, x2, y2, stroke: '#5c6672', 'stroke-opacity': 0.45, 'stroke-width': 1.2 }));
-  }
-}
-function label(defs, face, id, a0, a1, r, text, attrs) {
-  defs.appendChild(el('path', { id, d: arcPath(a0, a1, r), fill: 'none' }));
-  const t = el('text', { 'font-family': 'Oswald, Arial Narrow, sans-serif', 'dominant-baseline': 'central', ...attrs });
-  const tp = el('textPath', { href: `#${id}`, startOffset: '50%', 'text-anchor': 'middle' });
-  tp.textContent = text; t.appendChild(tp); face.appendChild(t);
-}
+function buildRing() { drawRing($('ring')); }
 function buildFace() {
-  const face = $('face'); face.innerHTML = ''; segs = [];
-  const defs = el('defs', {}); face.appendChild(defs);
-  let a = A0;
-  DIAL.zones.forEach((z, i) => {
-    const gift = GIFTS[z.gift], span = z.pct / 100 * (A1 - A0), a0 = a, a1 = a + span; a = a1;
-    segs.push({ gift, a0, a1 });
-    const closed = gift.id === MEM && !memOpen;
-    const [x0, y0] = pt(a0, Z_OUT), [x1, y1] = pt(a1, Z_OUT), [x2, y2] = pt(a1, Z_IN), [x3, y3] = pt(a0, Z_IN), lg = span > 180 ? 1 : 0;
-    face.appendChild(el('path', { d: `M${x0} ${y0} A${Z_OUT} ${Z_OUT} 0 ${lg} 1 ${x1} ${y1} L${x2} ${y2} A${Z_IN} ${Z_IN} 0 ${lg} 0 ${x3} ${y3}Z`, fill: closed ? '#2b3f63' : gift.fill, stroke: '#0f1f3d', 'stroke-width': 2 }));
-    const ink = closed ? '#a9bcd6' : gift.ink, big = closed ? 'GONE' : z.big, small = closed ? 'TAKEN' : z.small;
-    label(defs, face, `arrd-zb${i}`, a0, a1, R_BIG, big, { fill: ink, 'font-weight': 600, 'font-size': labelFontSize(big, arcUnits(z.pct, R_BIG), 16).toFixed(1), 'letter-spacing': '.3' });
-    label(defs, face, `arrd-zs${i}`, a0, a1, R_SMALL, small, { fill: ink, 'font-weight': 500, 'font-size': labelFontSize(small, arcUnits(z.pct, R_SMALL), 8.6).toFixed(1), 'letter-spacing': '.5', opacity: 0.92 });
-  });
-  for (let f = F0; f <= F1; f += 5) {
-    const a2 = fToAng(f), major = f % 10 === 0;
-    const [x1, y1] = pt(a2, 86), [x2, y2] = pt(a2, 91);
-    face.appendChild(el('line', { x1, y1, x2, y2, stroke: '#f9f7f8', 'stroke-opacity': major ? 0.8 : 0.35, 'stroke-width': major ? 2 : 1.2 }));
-    if (major) {
-      const [tx, ty] = pt(a2, 78);
-      const n = el('text', { x: tx, y: ty, 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: f === 70 ? '#f9f7f8' : '#a9bcd6', 'font-family': 'Inter, sans-serif', 'font-weight': 600, 'font-size': 9.5 });
-      n.textContent = f; face.appendChild(n);
-    }
-  }
+  segs = drawFace($('face'), DIAL.zones, GIFTS, memOpen ? null : MEM);
   setAng(ang, false);
 }
 function setHub(main, sub, lbl) {
@@ -261,6 +223,7 @@ const tween = (from, to, dur, ease) => new Promise((res) => {
 });
 async function turnTo(giftId) {
   const mine = segs.filter((s) => s.gift.id === giftId), tot = mine.reduce((n, s) => n + (s.a1 - s.a0), 0);
+  if (!mine.length) return;
   let r = Math.random() * tot, s = mine[0];
   for (const x of mine) { if ((r -= x.a1 - x.a0) < 0) { s = x; break; } }
   const target = s.a0 + (s.a1 - s.a0) * (0.25 + Math.random() * 0.5);
@@ -313,6 +276,7 @@ function renderScarcity(st) {
   $('scar').textContent = text;
 }
 function renderOdds() {
+  if (!root) return;
   const pool = DIAL.gifts.filter((g) => g.id !== MEM || memOpen), tot = pool.reduce((s, g) => s + g.weight, 0);
   $('odds').innerHTML = DIAL.gifts.map((g) => {
     const on = pool.includes(g), p = on ? g.weight / tot * 100 : 0;
@@ -321,7 +285,11 @@ function renderOdds() {
     <p class="arrd-fine" style="margin-top:8px">One gift per phone and per household. Codes expire ${DIAL.expiresDays} days after you claim them. Residential customers in ARR's service area. No purchase needed to play. <a href="${esc(RULES_URL)}" target="_blank" rel="noopener">Official rules</a></p>`;
 }
 let statusReq = null;
-const getStatus = () => (statusReq ||= api('status').catch(() => { statusReq = null; return null; }));
+const getStatus = () => (statusReq ||= api('status').then((st) => {
+  if (st && st.dial) applyDial(st.dial);
+  if (st) paused = st.enabled === false;
+  return st;
+}).catch(() => { statusReq = null; return null; }));
 async function loadStatus() {
   if (statusLoaded) return;
   const st = await getStatus();
@@ -452,6 +420,7 @@ async function turn() {
     return;
   }
   if (res.gift.id === MEM && !memOpen) { memOpen = true; buildFace(); renderOdds(); }   // the status line was stale: show the slice it lands on
+  if (!segs.some((x) => x.gift.id === res.gift.id)) { statusReq = null; await getStatus(); }   // the config changed since the dial was drawn
   await turnTo(res.gift.id);
   chime();
   const hold = { turn: res.turn, gift: res.gift, heldUntil: res.heldUntil };
@@ -560,7 +529,7 @@ function close() {
 function updateTab() {
   if (!tab || isOpen) return;
   const s = store.get();
-  const show = CFG.tab && !excluded() && s.seenAt && (variant === 'dial' || live(s.won) || live(s.hold));
+  const show = CFG.tab && !excluded() && s.seenAt && ((variant === 'dial' && !paused) || live(s.won) || live(s.hold));
   tab.hidden = !show;
   tab.textContent = live(s.won) ? 'Your code' : live(s.hold) ? 'Claim your gift' : 'Turn the dial';
 }
@@ -605,7 +574,7 @@ const visible = (n) => !!n && n.getClientRects().length > 0 && getComputedStyle(
 function pricingOpen() { return visible(document.getElementById('arr-pricing-modal')) || !!document.querySelector('dialog[open]'); }
 function typing() { const a = document.activeElement; return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable); }
 function mayAutoOpen() {
-  if (variant !== 'dial' || isOpen || excluded()) return false;
+  if (variant !== 'dial' || paused || isOpen || excluded()) return false;
   const s = store.get();
   if (live(s.won)) return false;
   if (s.seenAt && Date.now() - s.seenAt < CFG.snoozeDays * 864e5) return false;
@@ -619,18 +588,22 @@ async function tryAuto(retried) {
   open('auto');
 }
 
-function init() {
-  track('dial_assigned');
+/* The group, the side tab and the auto-open wait for /api/status: they follow the admin's settings. If it doesn't
+ * answer, the bundled settings decide the group and the dial doesn't open by itself. */
+async function init() {
   document.addEventListener('click', (e) => {
     const t = e.target.closest && e.target.closest('[data-arr-dial="open"]');
     if (t) { e.preventDefault(); open('button'); }
   });
   let forced = false;
   try { forced = new URLSearchParams(location.search).get('dial') === '1'; } catch (e) {}
-  mount(); updateTab();
-  if (forced) { open('link'); return; }
-  if (mayAutoOpen()) setTimeout(() => tryAuto(false), CFG.delayMs);
+  const t0 = Date.now();
+  mount();
+  if (forced) { assign(); track('dial_assigned'); open('link'); return; }
+  await getStatus();
+  assign(); track('dial_assigned'); updateTab();
+  if (mayAutoOpen()) setTimeout(() => tryAuto(false), Math.max(0, CFG.delayMs - (Date.now() - t0)));
 }
 
-window.ARRDial = { open, close, variant, reset: () => { try { localStorage.removeItem(STORE); } catch (e) {} } };
+window.ARRDial = { open, close, get variant() { return variant; }, reset: () => { try { localStorage.removeItem(STORE); } catch (e) {} } };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

@@ -1,5 +1,6 @@
 {
-  "_note": "Comfort Dial gifts, odds and rules. Hand-maintained; code never hard-codes a gift, price or date. Each gift's weight is both its real odds and its arc on the dial: weights sum to 100 and each gift's zones sum to its weight (npm test fails otherwise). The free year is in play only during a month listed in membership.months, at most one per month, and drops out of the odds while unavailable.",
+  "_note": "Comfort Dial gifts, odds and rules: the built-in starting version (version 0). Once someone publishes from the admin (<base>/admin), the live version is the newest row of Supabase comfort_dial_config and this file is only the fallback. Code never hard-codes a gift, price or date. Each active gift's weight is both its real odds and its arc on the dial: active weights sum to 100 and each gift's zones sum to its weight (validateConfig in src/lib/rules.js; npm test fails otherwise). The free year is in play only during a month listed in membership.months, at most one per month, and drops out of the odds while unavailable.",
+  "enabled": true,
   "season": "Furnace season",
   "phone": "(708) 671-0813",
   "bookUrl": "https://www.alwaysreadyrepair.com/book-service",
@@ -11,6 +12,13 @@
     "turnsPerDevicePerDay": 3,
     "turnsPerIpPerDay": 12,
     "claimsPerIpPerDay": 6
+  },
+  "popup": {
+    "split": 0.5,
+    "delayMs": 2000,
+    "snoozeDays": 7,
+    "excludePaths": ["/instant-pricing", "/about/transparent-pricing", "/book-service", "/contact-us", "/financing-offers", "/pay"],
+    "tab": true
   },
   "membership": {
     "giftId": "mem",

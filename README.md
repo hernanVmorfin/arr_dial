@@ -12,7 +12,9 @@ A Webflow Cloud app (Astro on Cloudflare Workers) mounted at `alwaysreadyrepair.
 | `/dial/api/status` · `turn` · `claim` · `details` | The popup's API. The server picks every gift. |
 | `/dial/api/redeemed` | Monday webhook: Code status set to Redeemed. |
 | `/dial/api/health` | Build and integration check (`?deep=1` also reads Supabase). |
-| `/dial/rules` | Official rules, generated from `data/dial.json`. |
+| `/dial/rules` | Official rules, generated from the live config. |
+| `/dial/admin` | The admin: promos and odds, settings, codes, results, history, team. Email + password sign-in. |
+| `/dial/api/admin/*` | The admin's API (signed-in admins only). |
 | `/dial/` | A page that opens the dial (QA, staging, direct link). |
 
 ## How it works
@@ -28,8 +30,29 @@ A Webflow Cloud app (Astro on Cloudflare Workers) mounted at `alwaysreadyrepair.
 5. **Redeemed**: the CSR sets Code status to Redeemed on the Monday item; the webhook marks the code used and tells
    Klaviyo, which stops the reminders.
 
-Gifts, odds, dates and limits live in `data/dial.json`. Each gift's weight is both its odds and its arc on the dial;
-`npm test` fails if they disagree.
+Gifts, odds, limits and the popup's settings are a **config** edited and published in the admin. Every publish is a
+new version in Supabase (`comfort_dial_config`), and each turn records the version that picked its gift.
+`data/dial.json` is version 0: what runs until someone publishes, and the fallback if Supabase can't be read. Each
+gift's weight is both its odds and its arc on the dial; the admin lays the dial out from the odds and refuses to
+publish a config that breaks the rules in `validateConfig` (`src/lib/rules.js`).
+
+## The admin
+
+`/dial/admin`, for whoever is on the `comfort_dial_admins` list. Passwords are Supabase Auth's (same project), so
+this app never stores one.
+
+| Tab | What it does |
+|---|---|
+| Promos & odds | Each promo's name, value, dial label, colours and odds, with the dial drawn live as visitors will see it. Add a promo, switch one off, reorder the slices. Published promos can be switched off, never deleted, so their codes keep working. |
+| Settings | The popup's share of visitors (the 50/50 test), delay, snooze, side tab, pages where it never opens; hold time, code expiry, daily limits; phone, booking link, service-area ZIPs; rules draft/final. |
+| Codes | Find a code by code, phone, name or street. Mark redeemed, void (with a reason), restore, extend, text it again. Export CSV. Every action is logged with who did it. |
+| Results | Turns, people, codes claimed, redemptions, value, opt-ins; by day; each promo's real share of turns against its odds; sources. |
+| History | Every published version, what changed and who published it. Restore any of them. |
+| Team | Add an admin (with a temporary password), remove one, see last sign-ins. |
+
+**Pause the dial** (above the tabs) stops it at once: no auto-open, no new turns, the button shows a call-us message.
+Edits in Promos and Settings are a draft until **Review & publish**; the site picks up a publish within 15 seconds.
+Two admins editing at once can't overwrite each other: the second publish is refused and asked to reload.
 
 ## Develop
 
@@ -39,12 +62,14 @@ cp .env.example .env        # MOUNT_PATH=/dial
 npm run dev                 # http://localhost:4321/dial/
 ```
 
-With no Supabase keys, `astro dev` keeps turns and wins in memory, so the whole flow can be clicked through. Runtime
-keys for local testing go in `.dev.vars` (same names as `.env.example`). The sample home `14532 S Ravinia Ave, 60462`
-passes the county-record check locally.
+With no Supabase keys, `astro dev` keeps turns, wins and published configs in memory, so the whole flow can be
+clicked through. Runtime keys for local testing go in `.dev.vars` (same names as `.env.example`). The sample home
+`14532 S Ravinia Ave, 60462` passes the county-record check locally. The local admin is at
+http://localhost:4321/dial/admin, signed in with the local-only account in `DEV_ADMIN` (`src/lib/runtime.ts`); it
+doesn't exist in a production build. A dev-server restart forgets everything, including the session.
 
 ```bash
-npm test                    # rules, service logic (in-memory store), integration payloads
+npm test                    # rules, service logic and admin (in-memory store), integration payloads
 npm run check               # astro check
 npm run deploy:check        # astro build + wrangler dry run: what Webflow Cloud runs
 ```

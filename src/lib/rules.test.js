@@ -95,3 +95,73 @@ test('address validation', () => {
   assert.equal(validateAddress({ street: '1 Main St', zip: '6046' }, cfg).field, 'zip');
   assert.equal(validateAddress({ street: '1 Main St', zip: '53202' }, cfg).field, 'zip');
 });
+
+/* ---------------- the admin's config rules ---------------- */
+import { validateConfig, layoutZones, activeGifts, contrast, chicagoDay, chicagoMidnight, addDays } from './rules.js';
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+test('the built-in config passes validation with no warnings', () => {
+  assert.deepEqual(validateConfig(cfg), { errors: [], warnings: [] });
+  assert.deepEqual(validateConfig(cfg, cfg), { errors: [], warnings: [] });
+});
+
+test('layoutZones keeps the order and each gift\'s split, scaled to new odds', () => {
+  const gifts = clone(cfg.gifts);
+  gifts.find((g) => g.id === 'svc20').weight = 40;
+  gifts.find((g) => g.id === 'duct50').weight = 25;
+  const z = layoutZones(cfg.zones, gifts);
+  assert.deepEqual(z.map((x) => x.gift), cfg.zones.map((x) => x.gift));
+  const svc = z.filter((x) => x.gift === 'svc20').map((x) => x.pct);
+  assert.deepEqual(svc, [28.89, 11.11]);   // 32.5 : 12.5 of 40
+  assert.equal(z.find((x) => x.gift === 'duct50').pct, 25);
+  assert.deepEqual(validateConfig({ ...cfg, gifts, zones: z }).errors, []);
+});
+
+test('layoutZones drops a gift that is off, adds a new one on the HEAT end, and takes labels from the gift', () => {
+  const gifts = clone(cfg.gifts);
+  gifts.find((g) => g.id === 'wh50').active = false;
+  gifts.push({ id: 'tune', short: '$40 OFF TUNE-UP', name: '$40 off a tune-up', sub: 'Furnace or AC', weight: 15, value: 40, fill: '#14284e', ink: '#f9f7f8', big: '$40 OFF', small: 'TUNE-UP' });
+  const z = layoutZones(cfg.zones, gifts);
+  assert.ok(!z.some((x) => x.gift === 'wh50'));
+  assert.deepEqual(z.at(-1), { gift: 'tune', pct: 15, big: '$40 OFF', small: 'TUNE-UP' });
+  const next = { ...cfg, gifts, zones: z };
+  assert.deepEqual(validateConfig(next, cfg).errors, []);
+  assert.ok(!activeGifts(next).some((g) => g.id === 'wh50'));
+  assert.ok(!giftsInPlay(next, true).some((g) => g.id === 'wh50'));
+  assert.equal(oddsInPlay(next, true).wh50, 0);
+  for (let i = 0; i < 500; i++) assert.notEqual(pickGift(next, true).id, 'wh50');
+});
+
+test('validateConfig refuses odds that don\'t add up, a deleted gift, and a broken colour', () => {
+  const off = clone(cfg); off.gifts[0].weight = 40;
+  assert.match(validateConfig(off).errors.join(' '), /add up to 95%/);
+  const gone = clone(cfg); gone.gifts = gone.gifts.filter((g) => g.id !== 'call'); gone.zones = gone.zones.filter((z) => z.gift !== 'call');
+  gone.gifts[0].weight = 60; gone.zones = layoutZones(gone.zones, gone.gifts);
+  assert.match(validateConfig(gone, cfg).errors.join(' '), /Switch it off instead of deleting it/);
+  const ugly = clone(cfg); ugly.gifts[1].fill = 'blue';
+  assert.match(validateConfig(ugly).errors.join(' '), /hex/);
+  const freeOnly = clone(cfg); freeOnly.gifts.forEach((g) => { if (g.id !== 'mem') g.active = false; });
+  freeOnly.gifts.find((g) => g.id === 'mem').weight = 100; freeOnly.zones = layoutZones(freeOnly.zones, freeOnly.gifts);
+  assert.match(validateConfig(freeOnly).errors.join(' '), /besides the free year/);
+});
+
+test('validateConfig warns about squeezed labels and low contrast but lets them through', () => {
+  const c = clone(cfg);
+  const svc = c.gifts.find((g) => g.id === 'svc20'), wh = c.gifts.find((g) => g.id === 'wh50');
+  svc.weight = 57; wh.weight = 3; wh.ink = '#ee3333';
+  c.zones = layoutZones(c.zones, c.gifts);
+  const r = validateConfig(c);
+  assert.deepEqual(r.errors, []);
+  assert.ok(r.warnings.some((w) => /squeezed/.test(w)));
+  assert.ok(r.warnings.some((w) => /hard to read/.test(w)));
+  assert.ok(contrast('#084e91', '#f9f7f8') > 7);
+});
+
+test('Chicago days and midnights across daylight saving', () => {
+  assert.equal(chicagoDay(new Date('2026-11-01T04:30:00Z')), '2026-10-31');
+  assert.equal(chicagoMidnight('2026-10-20').toISOString(), '2026-10-20T05:00:00.000Z');   // CDT
+  assert.equal(chicagoMidnight('2026-12-01').toISOString(), '2026-12-01T06:00:00.000Z');   // CST
+  assert.equal(chicagoMidnight('2026-11-01').toISOString(), '2026-11-01T05:00:00.000Z');   // the night clocks fall back
+  assert.equal(addDays('2026-03-01', -1), '2026-02-28');
+});

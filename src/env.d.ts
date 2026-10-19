@@ -10,4 +10,5 @@ type Env = {
 /* Injected at build time by Vite's define in astro.config.mjs; see /api/health. */
 declare const __BUILD__: { commit: string; builtAt: string | null };
 type Runtime<E> = import('@astrojs/cloudflare').Runtime<E>;
-declare namespace App { interface Locals extends Runtime<Env> {} }
+/* `admin` is set by src/middleware.ts on admin pages and /api/admin/* once the session checks out. */
+declare namespace App { interface Locals extends Runtime<Env> { admin?: { email: string; name: string; uid: string } } }
