@@ -228,6 +228,11 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
       const res = await call('POST', 'rpc/comfort_dial_stats', {}, { body: { p_since: iso(since), p_until: iso(until) } });
       if (!res.ok) throw new Error(`supabase stats ${res.status} ${(await res.text()).slice(0, 200)}`);
       return (await res.json()) as Stats;
+    },
+
+    async allMemberships() { return rows<Membership>(await call('GET', T.memberships, { select: '*', order: 'mem_month.asc' }), 'memberships'); },
+    async membershipEntries() {
+      return rows<Entry>(await call('GET', T.entries, { select: '*', mem_month: 'not.is.null', order: 'mem_month.asc' }), 'membership entries');
     }
   };
 }

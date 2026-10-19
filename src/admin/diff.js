@@ -1,4 +1,6 @@
 /* What changed between two configs, in plain words: shown before publishing and on each version in History. */
+import { monthName } from '../lib/rules.js';
+
 const pct = (n) => `${Number((+n).toFixed(2))}%`;
 const list = (a) => (a || []).join(', ') || 'none';
 
@@ -18,8 +20,7 @@ const SETTINGS = [
   ['bookUrl', 'Book online link', String],
   ['zipPrefixes', 'Service area ZIPs', list],
   ['season', 'Season name', String],
-  ['rulesFinal', 'Official rules', (v) => (v ? 'final' : 'draft')],
-  ['membership.months', 'Free-year months', list]
+  ['rulesFinal', 'Official rules', (v) => (v ? 'final' : 'draft')]
 ];
 const get = (o, path) => path.split('.').reduce((x, k) => (x == null ? x : x[k]), o);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -53,5 +54,9 @@ export function diffConfigs(a, b) {
     const x = get(a, path), y = get(b, path);
     if (!same(x, y)) out.push(`${label}: ${x == null ? '–' : f(x)} → ${y == null ? '–' : f(y)}`);
   }
+  const was = get(a, 'membership.months') || [], now = get(b, 'membership.months') || [];
+  const added = now.filter((m) => !was.includes(m)), removed = was.filter((m) => !now.includes(m));
+  const words = [added.length && `added ${added.map((m) => monthName(m)).join(', ')}`, removed.length && `removed ${removed.map((m) => monthName(m)).join(', ')}`];
+  if (added.length || removed.length) out.push(`Free-year months: ${words.filter(Boolean).join('; ')}`);
   return out;
 }

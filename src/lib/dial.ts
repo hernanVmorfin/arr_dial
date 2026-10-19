@@ -10,7 +10,7 @@
  *
  * Storage is the DialDb interface (lib/db.ts). Nothing here does I/O except through it. */
 import {
-  chicagoMonth, inSeason, membershipsLeft, membershipActive, nextMembershipMonth, pickGift, makeCode, normPhone, cleanFirstName,
+  chicagoMonth, freeYearStatus, inSeason, membershipActive, pickGift, makeCode, normPhone, cleanFirstName,
   validateAddress, expiresAt, holdUntil, dayAgo, isUuid
 } from './rules.js';
 import { addressKey } from './address.ts';
@@ -44,16 +44,8 @@ export type Fail = { ok: false; status: number; error: string; field?: string; r
 const fail = (status: number, error: string, extra: Partial<Fail> = {}): Fail => ({ ok: false, status, error, ...extra });
 
 export async function status(db: DialDb, cfg: Cfg, now = new Date()) {
-  const month = chicagoMonth(now);
-  const on = membershipActive(cfg);
-  const claimed = on ? await db.claimedMonths() : [];
-  return {
-    month,
-    membershipOpen: on && inSeason(cfg, month) && !claimed.includes(month),
-    membershipsLeft: on ? membershipsLeft(cfg, month, claimed) : 0,
-    membershipsTotal: cfg.membership.months.length,
-    nextUnlock: on ? nextMembershipMonth(cfg, month) : null
-  };
+  const claimed = membershipActive(cfg) ? await db.claimedMonths() : [];
+  return freeYearStatus(cfg, chicagoMonth(now), claimed);
 }
 
 /** context: the visit (lib/visit.js), already cleaned; it rides along to the code if they claim. */

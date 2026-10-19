@@ -183,6 +183,9 @@ export function memoryDb(seed: MemorySeed = {}): MemoryDb {
         sources: [...so].map(([source, v]) => ({ source, ...v })).sort((a, b) => b.claims - a.claims || a.source.localeCompare(b.source))
       };
       return stats;
-    }
+    },
+
+    async allMemberships() { return memberships.map((m) => ({ ...m })).sort((a, b) => a.mem_month.localeCompare(b.mem_month)); },
+    async membershipEntries() { return entries.filter((e) => e.mem_month).map((e) => ({ ...e })); }
   };
 }

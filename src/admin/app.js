@@ -85,11 +85,13 @@ async function publish() {
   const changes = diffConfigs(S.live.config, S.draft);
   const { errors, warnings } = validateConfig(S.draft, S.live.config);
   const oddsChanged = changes.some((c) => /odds|Switched|New promo/.test(c));
+  const monthsChanged = changes.some((c) => c.startsWith('Free-year months'));
   const body = `
     <div><p class="label" style="margin:0 0 4px">What changes</p><ul>${changes.map((c) => `<li>${esc(c)}</li>`).join('') || '<li>Small edits</li>'}</ul></div>
     ${errors.length ? `<div class="callout"><p><b>Fix these first</b></p><ul>${errors.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     ${warnings.length ? `<div class="callout blue"><p><b>Worth a look</b></p><ul>${warnings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     ${S.draft.rulesFinal && oddsChanged ? '<div class="callout"><p>The official rules are final. Publishing changes the odds printed on the rules page from this moment. Turns already taken keep the odds they were played under.</p></div>' : ''}
+    ${S.draft.rulesFinal && monthsChanged ? '<div class="callout"><p>The official rules are final. Publishing changes the free-year months and the dates the rules page gives for the dial.</p></div>' : ''}
     <label class="f"><span>Note (optional)</span><textarea name="note" rows="2" maxlength="300" placeholder="Why: e.g. more free service calls for the cold snap"></textarea></label>
     <p class="err" id="pubErr"></p>
     <p class="small muted" style="margin:0">Goes live as version ${S.live.version + 1}. The popup, the rules page and new turns pick it up within 15 seconds.</p>`;

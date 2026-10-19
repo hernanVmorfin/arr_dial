@@ -109,12 +109,17 @@ books more, set the split back to 100%. If it books less, set it to 0% (or remov
 ## Configuration
 
 The admin (`/dial/admin`) edits and publishes everything visitors see: promos, odds, dial layout, popup settings,
-limits, contact details, rules status. Each publish is a row in `comfort_dial_config`; the newest is live, and the
+free-year months, limits, contact details, rules status. Each publish is a row in `comfort_dial_config`; the newest is live, and the
 dial, the rules page and new turns pick it up within 15 seconds. History → Restore publishes an old one again.
 
 `data/dial.json` is version 0, the config until the first publish and the fallback if Supabase can't be read.
-Not in the admin yet: `membership.months`, which months have a free year. Every publish carries them over from the
-version before, so after the first publish, changing them is a developer job (or a future Settings field).
+
+Which months have a free year (`membership.months`) is Settings → Free-year schedule. Each month says whether its
+free year was won (by whom, with the code), is held on someone's claim screen right now, is up for grabs, or is
+still to come. The line under the dial and the rules page (its months and the dial's end date) follow a publish. A
+won month can't be taken off, because the rules print it; a month that has ended can't be added. A hold frees
+itself when its countdown runs out, so there is nothing to release by hand. History → Restore keeps won months and
+leaves out months that have ended since.
 
 Embed options (`window.__ARR_DIAL__`), all optional: `debug` (false, logs events to the console), `apiBase` (only if
 dial.js is served from elsewhere), `logoUrl`. Popup settings set here (`split`, `delayMs`, ...) are overridden by the

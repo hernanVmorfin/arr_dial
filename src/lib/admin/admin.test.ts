@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { memoryDb } from '../db-memory.ts';
+import { supabaseDb } from '../db-supabase.ts';
+import { addressKey } from '../address.ts';
 import { parseSearch } from '../db.ts';
 import { takeTurn, claimGift, status, type Cfg } from '../dial.ts';
 import { liveConfig, forgetConfig, publicConfig } from '../config.ts';
@@ -9,7 +11,7 @@ import { memoryAuth } from './auth.ts';
 import { readSession, signSession, sessionCookie, cookieValue } from './session.ts';
 import {
   signIn, publishConfig, setDialEnabled, rollbackTo, codeAction, addAdmin, removeAdmin, changePassword, currentConfig,
-  statsRange, cleanConfig, RESENDS_PER_DAY
+  statsRange, cleanConfig, freeYears, RESENDS_PER_DAY
 } from './service.ts';
 
 const builtIn = JSON.parse(readFileSync(new URL('../../../data/dial.json', import.meta.url), 'utf8'));
@@ -314,4 +316,95 @@ test('results ranges are whole Chicago days', () => {
   assert.equal(w.until.toISOString(), '2026-10-20T05:00:00.000Z');
   assert.deepEqual([statsRange({ range: 'today' }, now).from, statsRange({ range: '30d' }, now).from], ['2026-10-19', '2026-09-20']);
   assert.equal(statsRange({ from: '2026-10-05', to: '2026-10-01' }, now).from, '2026-10-13', 'a backwards custom range falls back');
+});
+
+/* ---------------- free-year schedule ---------------- */
+
+const HOME = { street: '14532 S Ravinia Ave', zip: '60462' };
+const NOV = new Date('2026-11-10T15:00:00Z');
+const months = (c: Cfg, m: string[]) => edited(c, (x) => { x.membership.months = m; });
+function withHome() {
+  forgetConfig();
+  return memoryDb({ admins: [JASON], properties: { [addressKey(HOME.street, HOME.zip)]: 'cook:27101000000000' } });
+}
+async function winFreeYear(db: ReturnType<typeof memoryDb>, cfg: Cfg, phone: string, when: Date) {
+  const t = await takeTurn(db, cfg, ipIn(), when, () => 0.97);
+  if (!t.ok || t.gift.id !== 'mem') throw new Error('turn');
+  const c = await claimGift(db, cfg, { turnId: t.turn.id, phone, ip: `10.8.0.${++n}`, ipLimits: true, ...HOME }, when);
+  if (!c.ok || c.duplicate) throw new Error('claim');
+  return c.entry;
+}
+
+test('free-year schedule: months publish in calendar order, and the line under the dial and the turns follow', async () => {
+  const { db } = setup();
+  const cur = await currentConfig(db, builtIn);
+  const res = await publishConfig(db, builtIn, { config: months(cur.config, ['2027-03', '2026-10', '2026-12', '2027-01', '2027-02']), baseVersion: 0, by: JASON.email, ip: null }, OCT);
+  assert.ok(res.ok);
+  if (!res.ok) return;
+  assert.deepEqual(res.config.membership.months, ['2026-10', '2026-12', '2027-01', '2027-02', '2027-03'], 'November dropped, March added, stored in order');
+  const live = await liveConfig(db, builtIn);
+  const st = await status(db, live, NOV);
+  assert.deepEqual([st.inSeason, st.membershipOpen, st.membershipsLeft, st.nextUnlock], [false, false, 4, '2026-12']);
+  for (let i = 0; i < 20; i++) {
+    const t = await takeTurn(db, live, ipIn(), NOV, () => 0.97);
+    assert.ok(t.ok && t.gift.id !== 'mem', 'no free year in a month off the schedule');
+  }
+  const dec = await takeTurn(db, live, ipIn(), new Date('2026-12-02T15:00:00Z'), () => 0.97);
+  assert.ok(dec.ok && dec.gift.id === 'mem');
+});
+
+test('free-year schedule: a won month stays listed, an ended one can\'t be added, and a restore keeps to both', async () => {
+  const db = withHome();
+  const cur = await currentConfig(db, builtIn);
+  await winFreeYear(db, cur.config, '7085550501', OCT);
+  const by = { by: JASON.email, ip: null };
+  const drop = await publishConfig(db, builtIn, { config: months(cur.config, ['2026-11', '2026-12', '2027-01', '2027-02']), baseVersion: 0, ...by }, NOV);
+  assert.ok(!drop.ok && drop.status === 400 && /October 2026's free year was won/.test(drop.error));
+  const past = await publishConfig(db, builtIn, { config: months(cur.config, ['2026-09', ...cur.config.membership.months]), baseVersion: 0, ...by }, NOV);
+  assert.ok(!past.ok && /September 2026 has ended/.test(past.error));
+  assert.ok((await publishConfig(db, builtIn, { config: months(cur.config, ['2026-10', '2026-11', '2027-01', '2027-02', '2027-03']), baseVersion: 0, ...by }, NOV)).ok);
+
+  // Restoring version 0 in January: December ended off the schedule, so it doesn't come back.
+  const back = await rollbackTo(db, builtIn, { version: 0, baseVersion: 1, ...by }, new Date('2027-01-10T15:00:00Z'));
+  assert.ok(back.ok);
+  if (back.ok) assert.deepEqual(back.config.membership.months, ['2026-10', '2026-11', '2027-01', '2027-02']);
+});
+
+test('free-year schedule: restoring a version from before a month was won keeps that month', async () => {
+  const db = withHome();
+  const cur = await currentConfig(db, builtIn);
+  const by = { by: JASON.email, ip: null };
+  assert.ok((await publishConfig(db, builtIn, { config: months(cur.config, ['2026-11', '2026-12']), baseVersion: 0, ...by }, new Date('2026-09-20T15:00:00Z'))).ok);
+  assert.ok((await publishConfig(db, builtIn, { config: months(cur.config, ['2026-10', '2026-11', '2026-12']), baseVersion: 1, ...by }, new Date('2026-09-21T15:00:00Z'))).ok);
+  await winFreeYear(db, await liveConfig(db, builtIn), '7085550502', OCT);
+  const back = await rollbackTo(db, builtIn, { version: 1, baseVersion: 2, ...by }, new Date('2026-12-05T15:00:00Z'));
+  assert.ok(back.ok);
+  if (back.ok) assert.deepEqual(back.config.membership.months, ['2026-10', '2026-11', '2026-12']);
+});
+
+test('free-year schedule: each month shows who won it with the code, a hold on screen, or free again', async () => {
+  const db = withHome();
+  const cfg = await liveConfig(db, builtIn);
+  const e = await winFreeYear(db, cfg, '7085550601', OCT);
+  const t = await takeTurn(db, cfg, ipIn(), NOV, () => 0.97);
+  assert.ok(t.ok && t.gift.id === 'mem');
+  const a = await freeYears(db, cfg, new Date(NOV.getTime() + 2 * 6e4));
+  assert.equal(a.month, '2026-11');
+  assert.deepEqual(a.rows.map((r) => [r.month, r.state]), [['2026-10', 'won'], ['2026-11', 'held']]);
+  assert.equal(a.rows[0].entry!.code, e.code);
+  assert.equal(a.rows[0].entry!.giftName, 'Free year of membership ($299 value)');
+  assert.equal(a.rows[1].entry, null);
+  const b = await freeYears(db, cfg, new Date(NOV.getTime() + 11 * 6e4));
+  assert.equal(b.rows[1].state, 'free', 'a hold that ran out frees itself');
+});
+
+test('free-year schedule: the Supabase store asks for every month and the free-year codes', async () => {
+  const urls: string[] = [];
+  const fake = (async (u: URL) => { urls.push(String(u)); return new Response('[]', { status: 200 }); }) as unknown as typeof fetch;
+  const sb = supabaseDb({ SUPABASE_URL: 'https://x.supabase.co/', SUPABASE_SECRET_KEY: 'sb_secret_test' }, fake);
+  assert.deepEqual([await sb.allMemberships(), await sb.membershipEntries()], [[], []]);
+  assert.deepEqual(urls, [
+    'https://x.supabase.co/rest/v1/comfort_dial_memberships?select=*&order=mem_month.asc',
+    'https://x.supabase.co/rest/v1/comfort_dial_entries?select=*&mem_month=not.is.null&order=mem_month.asc'
+  ]);
 });

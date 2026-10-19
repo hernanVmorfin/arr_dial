@@ -22,6 +22,7 @@
 import BUILT_IN from '../../data/dial.json';
 import { svgInner, drawFace, hubSize, angToF, fToAng, A0, A1, VIEWBOX } from './face.js';
 import { adParams, pathOf, referrerOf, cookieOf, gaClientId, klaviyoExchangeId, deviceKind, UTM_KEYS } from '../lib/visit.js';
+import { scarcityLine } from '../lib/rules.js';
 
 const EMBED = window.__ARR_DIAL__ || {};
 const CFG = Object.assign({
@@ -496,14 +497,7 @@ function turnstileToken() {
 }
 
 /* ---------------- status line and odds ---------------- */
-const monthLabel = (ym) => { if (!ym) return ''; const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long' }); };
-function renderScarcity(st) {
-  let text = '';
-  if (st && st.membershipsLeft === 0) text = 'This season\'s free years are all claimed';
-  else if (st && st.membershipOpen) text = `${monthLabel(st.month)}'s free year is still up for grabs`;
-  else if (st && st.nextUnlock) text = `${monthLabel(st.month)}'s free year is taken. Next one: ${monthLabel(st.nextUnlock).slice(0, 3)} 1`;
-  $('scar').textContent = text;
-}
+function renderScarcity(st) { $('scar').textContent = scarcityLine(st); }
 function renderOdds() {
   if (!root) return;
   const pool = DIAL.gifts.filter((g) => g.id !== MEM || memOpen), tot = pool.reduce((s, g) => s + g.weight, 0);

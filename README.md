@@ -61,7 +61,7 @@ this app never stores one.
 | Tab | What it does |
 |---|---|
 | Promos & odds | Each promo's name, value, dial label, colours and odds, with the dial drawn live as visitors will see it. Add a promo, switch one off, reorder the slices. Published promos can be switched off, never deleted, so their codes keep working. |
-| Settings | The popup's share of visitors (100%, or less for a split test), delay, snooze, side tab, pages where it never opens; hold time, code expiry, daily limits; phone, booking link, service-area ZIPs; rules draft/final. |
+| Settings | The popup's share of visitors (100%, or less for a split test), delay, snooze, side tab, pages where it never opens; which months have a free year, and who won each; hold time, code expiry, daily limits; phone, booking link, service-area ZIPs; rules draft/final. |
 | Codes | Find a code by code, phone, name or street. Mark redeemed, void (with a reason), restore, extend, text it again. Export CSV. Every action is logged with who did it. |
 | Results | Turns, people, codes claimed, redemptions, value, opt-ins; by day; each promo's real share of turns against its odds; sources. |
 | History | Every published version, what changed and who published it. Restore any of them. |
