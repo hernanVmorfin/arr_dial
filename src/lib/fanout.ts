@@ -21,7 +21,7 @@ async function settle(label: string, tasks: Record<string, () => Promise<unknown
 export function announceWin(env: unknown, db: DialDb, cfg: Cfg, e: Entry, gift: Gift) {
   const enriched = enrichEntry(env, db, e).catch((err) => { console.error('dial enrich', err); return e; });
   const tasks: Record<string, () => Promise<unknown>> = { enrich: () => enriched };
-  if (podiumConfigured(env)) tasks.podium = () => sendCodeText(env, e, gift, cfg);
+  if (podiumConfigured(env)) tasks.podium = () => sendCodeText(env, db, e, gift, cfg);
   if (mondayConfigured(env)) tasks.monday = async () => {
     const x = await enriched;
     const r = await createDialItem(env, x, gift, cfg);

@@ -39,7 +39,7 @@ export const POST: APIRoute = async (ctx) => {
     if (!res.ok) return adminJson({ error: res.error }, res.status);
     const gift = giftById(cfg, res.entry.gift);
     if (res.action === 'resend') {
-      try { await sendCodeText(env, res.entry, gift, cfg); }
+      try { await sendCodeText(env, db, res.entry, gift, cfg); }
       catch (e) { console.error('dial admin resend', e); return adminJson({ error: 'Podium didn\'t take the text. Try again, or give the customer the code by phone.' }, 502); }
     } else {
       await afterResponse(ctx.locals, announceCodeChange(env, cfg, res.entry, gift, res.action));
