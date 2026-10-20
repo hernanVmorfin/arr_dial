@@ -13,8 +13,8 @@ const int = (v) => (v === '' ? NaN : Math.round(Number(v)));
  * csv (comma separated) · bool */
 const SECTIONS = [
   ['The popup', 'When it opens by itself. Buttons with data-arr-dial="open" and ?dial=1 links open it for everyone, always.', [
-    ['popup.split', 'Visitors who get the popup', 'pct', 'The 50/50 test: the rest are the control group and never see it open by itself. 100% for everyone, 0% for no one.', '%'],
-    ['popup.delayMs', 'Opens after', 'sec', 'Seconds after the page shows.', 'sec'],
+    ['popup.split', 'Visitors who get the popup', 'pct', '100% for everyone. Lower it to run a test: the rest are the control group and never see it open by itself. 0% for no one.', '%'],
+    ['popup.delayMs', 'Opens after', 'sec', 'Seconds on the site this visit, counted across pages while it is on screen.', 'sec'],
     ['popup.snoozeDays', 'Then waits', 'int', 'Days before it opens by itself again for someone who closed it.', 'days'],
     ['popup.tab', 'Side tab', 'bool', 'After someone has seen the popup, a TURN THE DIAL tab stays on the right edge.'],
     ['popup.excludePaths', 'Pages where it never opens by itself', 'list', 'One path per line, like /book-service. Pages under a path count too.']
