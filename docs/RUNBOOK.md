@@ -30,7 +30,7 @@ In order. Each step is safe to stop after.
    | `MONDAY_CODE_STATUS_COLUMN` | Id of the new "Code status" column (step 5) |
    | `MONDAY_WEBHOOK_SECRET` | A long random string; also goes in the webhook URL (step 5) |
    | `PODIUM_API_TOKEN`, `PODIUM_LOCATION_UID` | Same as the pricing app |
-   | `KLAVIYO_PRIVATE_KEY` | Klaviyo → Settings → API keys → private key with write access to Profiles, Events and Subscriptions |
+   | `KLAVIYO_PRIVATE_KEY` | Klaviyo → Settings → API keys → private key with write access to Profiles, Events, Lists and Subscriptions (Klaviyo won't subscribe a reminder opt-in without Lists) |
    | `KLAVIYO_SMS_LIST_ID` | Optional: the list reminder opt-ins join |
    | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare → Turnstile → add widget for `alwaysreadyrepair.com` (Managed or Invisible) |
 
