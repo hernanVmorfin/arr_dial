@@ -1,6 +1,6 @@
 # Comfort Dial runbook
 
-Setup, launch, the 50/50 test, and operations. Nothing reaches visitors until step 7 (the Webflow embed).
+Setup, launch, an optional split test, and operations. Nothing reaches visitors until step 7 (the Webflow embed).
 
 ## Launch checklist
 
@@ -58,8 +58,9 @@ In order. Each step is safe to stop after.
    <script type="module" src="/dial/dial.js"></script>
    ```
 
-   Publish. The 50/50 test is now running at the split set in the admin (Settings → Visitors who get the popup,
-   50% to start). Don't put `split` or the other popup settings in the embed: the admin's win anyway.
+   Publish. Every visitor now sees the popup open after 4 seconds on the site (admin Settings → Visitors who get the
+   popup: 100%; Opens after: 4 sec). Don't put `split` or the other popup settings in the embed: the admin's win
+   anyway.
 8. **Live test**: open `https://www.alwaysreadyrepair.com/?dial=1`, turn, claim with your own phone. Confirm the
    text, the Monday item and the Klaviyo event. Then run `ARRDial.reset()` in the browser console and delete your row
    in `comfort_dial_entries` (and its turn in `comfort_dial_turns`). Each test needs a different phone.
@@ -75,17 +76,17 @@ without the embed. To pause without touching Webflow: admin → **Pause the dial
 no new turns are taken, and buttons show a call-us message. (Removing `SUPABASE_SECRET_KEY` still works as a last
 resort, but it takes the admin down too.)
 
-## The 50/50 test
+## A split test (optional)
 
-The admin's split (Settings → Visitors who get the popup) puts each visitor in the `dial` or `control` group. Each
-browser keeps a random number and is in `dial` while it is below the split, so changing the split only moves the
-visitors in between (50% → 100% moves the whole control group into `dial`; nobody already in `dial` leaves). Control
-never sees the popup open by itself or the side tab; `?dial=1` links and buttons still work for them, so ads can
-point anywhere.
+The popup starts at 100% of visitors. To measure what it does to bookings, lower Settings → Visitors who get the
+popup (50% for a 50/50 test). The split puts each visitor in the `dial` or `control` group. Each browser keeps a
+random number and is in `dial` while it is below the split, so changing the split only moves the visitors in between
+(50% → 100% moves the whole control group into `dial`; nobody already in `dial` leaves). Control never sees the popup
+open by itself or the side tab; `?dial=1` links and buttons still work for them, so ads can point anywhere.
 
 Every data-layer event carries `dial_variant`. Compare, per visitor, by group for 2 weeks: phone taps
 (`dial_call_clicked` plus the site's own call tracking), Book Service visits, and booked jobs. If the dial group
-books more, set the split to 100%. If it books less, set it to 0% (or remove the embed).
+books more, set the split back to 100%. If it books less, set it to 0% (or remove the embed).
 
 | Event | When |
 |---|---|

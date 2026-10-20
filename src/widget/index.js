@@ -11,8 +11,9 @@
  * gives a home address. The screen wakes with the time and the visitor's own weather (/api/weather), heats while it
  * turns, shows a HOLD countdown while they claim, and ends on their code.
  *
- * Opens by itself delayMs after the page shows on a first visit, for visitors in the dial share of the test (split),
- * on any page not in excludePaths. Never on top of the pricing popup, never after a win, not again for snoozeDays
+ * Opens by itself once the visitor has had the site on screen for delayMs this visit (counted across pages), for
+ * visitors in the dial share of the test (split), on any page not in excludePaths. Never on top of the pricing popup,
+ * never after a win, not again for snoozeDays
  * after it was seen, never while the dial is paused in the admin. ?dial=1 in the URL, [data-arr-dial="open"] clicks
  * and window.ARRDial.open() always open it.
  * Those settings are the admin's. window.__ARR_DIAL__ can still set them, but the admin's win once /api/status
@@ -76,7 +77,7 @@ function assign() {
 store.set({ device, roll });
 assign();   // from the bundled settings for now; again once /api/status brings the admin's
 
-/* ---------------- tracking: GTM dataLayer (dial_variant rides on every event for the 50/50 read) ---------------- */
+/* ---------------- tracking: GTM dataLayer (dial_variant rides on every event for a split-test read) ---------------- */
 /* ---------------- the visit: kept as they browse, sent with a turn (lib/visit.js), never shown back ----------------
  * first touch (this browser, kept): when, landing page, outside referrer, ad tags · visits so far ·
  * this visit (sessionStorage): landing page, referrer, ad tags, the last 15 pages, how long they've been here.
@@ -821,11 +822,44 @@ function mayAutoOpen() {
   if (s.seenAt && Date.now() - s.seenAt < CFG.snoozeDays * 864e5) return false;
   return true;
 }
-async function tryAuto(retried) {
-  if (!mayAutoOpen()) return;
+
+/* Time on the site: how long a page of it has been on screen this visit, kept in the visit's sessionStorage so it
+ * carries across pages. Someone who clicks to another page 3 s into a 4 s delay sees the dial 1 s into that page; a
+ * tab opened in the background starts counting when they look at it. A page always gets FIRST_LOOK_MS on screen
+ * before the dial covers it. */
+const FIRST_LOOK_MS = 1000;
+let shownAt = null, pageMs = 0, autoTimer = 0, autoReady = false, autoRetried = false;
+const sinceShown = () => (shownAt ? Date.now() - shownAt : 0);
+function siteMs() {
+  let ms = 0;
+  try { ms = JSON.parse(sessionStorage.getItem(VISIT) || '{}').activeMs || 0; } catch (e) {}
+  return ms + sinceShown();
+}
+function onShow() {
+  if (shownAt || document.visibilityState !== 'visible') return;
+  shownAt = Date.now();
+  scheduleAuto();
+}
+function onHide() {
+  clearTimeout(autoTimer);
+  if (!shownAt) return;
+  const ms = sinceShown(); shownAt = null; pageMs += ms;
+  try {
+    const s = JSON.parse(sessionStorage.getItem(VISIT) || 'null');
+    if (s) { s.activeMs = (s.activeMs || 0) + ms; sessionStorage.setItem(VISIT, JSON.stringify(s)); }
+  } catch (e) {}
+}
+function scheduleAuto(ms) {
+  clearTimeout(autoTimer);
+  if (!autoReady || !shownAt || !mayAutoOpen()) return;
+  if (ms === undefined) ms = Math.max(CFG.delayMs - siteMs(), Math.min(CFG.delayMs, FIRST_LOOK_MS) - (pageMs + sinceShown()));
+  autoTimer = setTimeout(tryAuto, Math.max(0, ms));
+}
+async function tryAuto() {
+  if (!shownAt || !mayAutoOpen()) return;
   const st = await getStatus();
-  if (!st || st.enabled === false) return;   // never interrupt a visitor just to say the dial is down
-  if (pricingOpen() || typing()) { if (!retried) setTimeout(() => tryAuto(true), 6000); return; }
+  if (!st || st.enabled === false || !shownAt) return;   // never interrupt a visitor just to say the dial is down
+  if (pricingOpen() || typing()) { if (!autoRetried) { autoRetried = true; scheduleAuto(6000); } return; }
   open('auto');
 }
 
@@ -836,14 +870,17 @@ async function init() {
     const t = e.target.closest && e.target.closest('[data-arr-dial="open"]');
     if (t) { e.preventDefault(); open('button'); }
   });
+  document.addEventListener('visibilitychange', () => (document.visibilityState === 'visible' ? onShow() : onHide()));
+  addEventListener('pagehide', onHide);
+  addEventListener('pageshow', onShow);   // back/forward cache
+  onShow();
   let forced = false;
   try { forced = new URLSearchParams(location.search).get('dial') === '1'; } catch (e) {}
-  const t0 = Date.now();
   mount();
   if (forced) { assign(); track('dial_assigned'); open('link'); return; }
   await getStatus();
   assign(); track('dial_assigned'); updateTab();
-  if (mayAutoOpen()) setTimeout(() => tryAuto(false), Math.max(0, CFG.delayMs - (Date.now() - t0)));
+  autoReady = true; scheduleAuto();
 }
 
 window.ARRDial = { open, close, get variant() { return variant; }, reset: () => { try { localStorage.removeItem(STORE); } catch (e) {} } };
