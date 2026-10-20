@@ -8,11 +8,12 @@
  * An ARR smart thermostat on the wall: gifts sit on a 50–90°F ring (face.js), arc length = the real odds, the free
  * year raised as the top prize. Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never
  * this file, and holds it for a few minutes), then a mobile number claims it (/api/claim). A free-year winner also
- * gives a home address. The screen wakes with the time and the visitor's own weather (/api/weather), heats while it
- * turns, shows a HOLD countdown while they claim, and ends on their code.
+ * gives a home address. The screen wakes with the time and the visitor's own weather (/api/weather), heats (red) while
+ * the needle climbs and cools (blue) while it falls, shows a HOLD countdown while they claim, and ends on their code.
  *
- * Opens by itself delayMs after the page shows on a first visit, for visitors in the dial share of the test (split),
- * on any page not in excludePaths. Never on top of the pricing popup, never after a win, not again for snoozeDays
+ * Opens by itself once the visitor has had the site on screen for delayMs this visit (counted across pages), for
+ * visitors in the dial share of the test (split), on any page not in excludePaths. Never on top of the pricing popup,
+ * never after a win, not again for snoozeDays
  * after it was seen, never while the dial is paused in the admin. ?dial=1 in the URL, [data-arr-dial="open"] clicks
  * and window.ARRDial.open() always open it.
  * Those settings are the admin's. window.__ARR_DIAL__ can still set them, but the admin's win once /api/status
@@ -21,6 +22,7 @@
 import BUILT_IN from '../../data/dial.json';
 import { svgInner, drawFace, hubSize, angToF, fToAng, A0, A1, VIEWBOX } from './face.js';
 import { adParams, pathOf, referrerOf, cookieOf, gaClientId, klaviyoExchangeId, deviceKind, UTM_KEYS } from '../lib/visit.js';
+import { scarcityLine } from '../lib/rules.js';
 
 const EMBED = window.__ARR_DIAL__ || {};
 const CFG = Object.assign({
@@ -76,7 +78,7 @@ function assign() {
 store.set({ device, roll });
 assign();   // from the bundled settings for now; again once /api/status brings the admin's
 
-/* ---------------- tracking: GTM dataLayer (dial_variant rides on every event for the 50/50 read) ---------------- */
+/* ---------------- tracking: GTM dataLayer (dial_variant rides on every event for a split-test read) ---------------- */
 /* ---------------- the visit: kept as they browse, sent with a turn (lib/visit.js), never shown back ----------------
  * first touch (this browser, kept): when, landing page, outside referrer, ad tags · visits so far ·
  * this visit (sessionStorage): landing page, referrer, ad tags, the last 15 pages, how long they've been here.
@@ -137,6 +139,7 @@ const PATHS = {
   cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
   rain: '<line x1="16" y1="13" x2="16" y2="21"/><line x1="8" y1="13" x2="8" y2="21"/><line x1="12" y1="15" x2="12" y2="23"/><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>',
   snow: '<path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="8" y1="20" x2="8.01" y2="20"/><line x1="12" y1="18" x2="12.01" y2="18"/><line x1="12" y1="22" x2="12.01" y2="22"/><line x1="16" y1="16" x2="16.01" y2="16"/><line x1="16" y1="20" x2="16.01" y2="20"/>',
+  flake: [0, 60, 120, 180, 240, 300].map((r) => `<path transform="rotate(${r} 12 12)" d="M12 12V2.5M9.5 4.5l2.5 2 2.5-2"/>`).join(''),
   storm: '<path d="M19 16.9A5 5 0 0 0 18 7h-1.26a8 8 0 1 0-11.62 9"/><polyline points="13 11 9 17 15 17 11 23"/>',
   wind: '<path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/>'
 };
@@ -179,8 +182,8 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-glass::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.1) 0%,rgba(255,255,255,0) 45%),linear-gradient(180deg,rgba(249,247,248,.04) 0%,rgba(34,31,32,0) 50%,rgba(0,0,0,.28) 100%)}
 .arrd-i{display:block;width:100%;height:100%}
 .arrd-face{position:absolute;inset:0;width:100%;height:100%;display:block}
-.arrd-heat{opacity:0;transition:opacity .5s}
-.arrd-dev[data-state="heating"] .arrd-heat{opacity:1}
+.arrd-heat,.arrd-cool{opacity:0;transition:opacity .35s}
+.arrd-dev[data-state="heating"][data-mode="heat"] .arrd-heat,.arrd-dev[data-state="heating"][data-mode="cool"] .arrd-cool{opacity:1}
 .arrd-z,.arrd-root [data-arrd="tag"]{transition:opacity .15s}
 .arrd-dev[data-state="heating"] .arrd-z,.arrd-dev[data-state="won"] .arrd-z{opacity:.28}
 .arrd-dev[data-state] .arrd-z.is-lit{opacity:1}
@@ -190,11 +193,15 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-sb{position:absolute;z-index:2;top:5%;left:0;right:0;height:6%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:4cqw}
 .arrd-sb-l{justify-self:end;display:flex;gap:2.6cqw;align-items:center}
 .arrd-sb-l .arrd-i{width:3.6cqw;height:3.6cqw}
-.arrd-sb-l .arrd-i:last-child{color:var(--red)}
+.arrd-sb-l .arrd-sb-heat{color:var(--red)}
+.arrd-sb-l .arrd-sb-cool{color:var(--lb);display:none}
+.arrd-dev[data-state="heating"][data-mode="cool"] .arrd-sb-heat{display:none}
+.arrd-dev[data-state="heating"][data-mode="cool"] .arrd-sb-cool{display:block}
 .arrd-pill{display:inline-flex;align-items:center;gap:1.3cqw;height:5.2cqw;padding:0 3.2cqw;border-radius:99px;background:var(--navy);color:var(--white);font:600 11px/1 var(--body);font-size:3cqw;font-variant-numeric:tabular-nums;white-space:nowrap}
 .arrd-pill .arrd-i{width:2.8cqw;height:2.8cqw}
-.arrd-pill.sub,.arrd-pill.heat,.arrd-pill.hold{font-family:var(--sub);letter-spacing:.1em;text-transform:uppercase}
+.arrd-pill.sub,.arrd-pill.heat,.arrd-pill.cool,.arrd-pill.hold{font-family:var(--sub);letter-spacing:.1em;text-transform:uppercase}
 .arrd-pill.heat{background:var(--red);color:#fff}
+.arrd-pill.cool{background:var(--blue);color:#fff}
 .arrd-pill.hold{background:var(--yellow);color:var(--navy)}
 .arrd-mute{justify-self:start;width:9cqw;height:9cqw;margin:-2cqw 0 -2cqw -2.2cqw;padding:2.4cqw;border:0;border-radius:50%;background:none;color:var(--white);cursor:pointer}
 .arrd-side{z-index:2;top:43%;width:12%;display:flex;flex-direction:column;align-items:center;gap:2.4cqw;text-decoration:none}
@@ -271,7 +278,7 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-ok{color:var(--blue);font-weight:600;font-size:14px}
 .arrd-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:2147482999;writing-mode:vertical-rl;background:var(--navy);color:var(--white);border:0;border-left:4px solid var(--red);border-radius:10px 0 0 10px;padding:16px 9px;font:600 13px/1 var(--sub);text-transform:uppercase;letter-spacing:.12em;cursor:pointer;box-shadow:0 8px 24px -10px rgba(0,0,0,.5)}
 @media (max-width:640px){.arrd-tab{padding:13px 7px;font-size:12px}}
-@media (prefers-reduced-motion:reduce){.arrd-sheet{animation:none!important}.arrd-dev,.arrd-ly,.arrd-z,.arrd-heat{transition:none!important}}
+@media (prefers-reduced-motion:reduce){.arrd-sheet{animation:none!important}.arrd-dev,.arrd-ly,.arrd-z,.arrd-heat,.arrd-cool{transition:none!important}}
 `;
 
 /* ---------------- markup ---------------- */
@@ -291,7 +298,7 @@ const MARKUP = `
       <svg class="arrd-face arrd-ly" data-show="ready heating won" data-arrd="svg" viewBox="${VIEWBOX}" role="img" aria-label="Comfort Dial thermostat with gifts on a 50 to 90 degree scale. Each gift's slice is sized by its odds. Press Turn the dial.">${svgInner()}
       </svg>
       <div class="arrd-sb">
-        <span class="arrd-sb-l">${icon('wifi')}${icon('flame')}</span>
+        <span class="arrd-sb-l">${icon('wifi')}${icon('flame', 'arrd-sb-heat')}${icon('flake', 'arrd-sb-cool')}</span>
         <span class="arrd-pill" data-arrd="pill"></span>
         <button class="arrd-mute" type="button" data-arrd="mute" aria-pressed="false" aria-label="Mute the dial's sounds">${icon('sound')}</button>
       </div>
@@ -382,10 +389,18 @@ const longDate = (d) => d.toLocaleDateString('en-US', { weekday: 'long', month: 
 function devState(s) {
   $('dev').dataset.state = s;
   const p = $('pill');
-  if (s === 'heating') { p.className = 'arrd-pill heat'; p.innerHTML = `${icon('flame')}Heating`; }
+  if (s === 'heating') { $('dev').dataset.mode = ''; hvac('heat'); }
   else if (s === 'won') { p.className = 'arrd-pill hold'; p.innerHTML = `${icon('clock')}Hold <span data-arrd="clock">${DIAL.holdMinutes}:00</span>`; }
   else if (s === 'wake') { p.className = 'arrd-pill sub'; p.textContent = `Heat ${Math.round(angToF(ang))}°`; }
   else { p.className = 'arrd-pill'; p.textContent = fmtTime(new Date()).split(' ')[0]; }
+}
+/* While it turns: HEATING in red as the needle climbs, COOLING in blue as it falls, like a real thermostat. */
+function hvac(mode) {
+  if ($('dev').dataset.mode === mode) return;
+  $('dev').dataset.mode = mode;
+  const p = $('pill');
+  p.className = `arrd-pill ${mode}`;
+  p.innerHTML = mode === 'cool' ? `${icon('flake')}Cooling` : `${icon('flame')}Heating`;
 }
 function paintClock() {
   const d = new Date(), [hm, ampm] = fmtTime(d).split(' ');
@@ -435,6 +450,7 @@ function chime() {
 const easeIO = (k) => -(Math.cos(Math.PI * k) - 1) / 2;
 const easeOut = (k) => 1 - Math.pow(1 - k, 4);
 const tween = (from, to, dur, ease) => new Promise((res) => {
+  if (to !== from) hvac(to > from ? 'heat' : 'cool');
   const t0 = performance.now();
   (function f(now) { const k = Math.min(1, (now - t0) / dur); setAng(from + (to - from) * ease(k), true); k < 1 ? requestAnimationFrame(f) : res(); })(t0);
 });
@@ -481,14 +497,7 @@ function turnstileToken() {
 }
 
 /* ---------------- status line and odds ---------------- */
-const monthLabel = (ym) => { if (!ym) return ''; const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long' }); };
-function renderScarcity(st) {
-  let text = '';
-  if (st && st.membershipsLeft === 0) text = 'This season\'s free years are all claimed';
-  else if (st && st.membershipOpen) text = `${monthLabel(st.month)}'s free year is still up for grabs`;
-  else if (st && st.nextUnlock) text = `${monthLabel(st.month)}'s free year is taken. Next one: ${monthLabel(st.nextUnlock).slice(0, 3)} 1`;
-  $('scar').textContent = text;
-}
+function renderScarcity(st) { $('scar').textContent = scarcityLine(st); }
 function renderOdds() {
   if (!root) return;
   const pool = DIAL.gifts.filter((g) => g.id !== MEM || memOpen), tot = pool.reduce((s, g) => s + g.weight, 0);
@@ -821,11 +830,44 @@ function mayAutoOpen() {
   if (s.seenAt && Date.now() - s.seenAt < CFG.snoozeDays * 864e5) return false;
   return true;
 }
-async function tryAuto(retried) {
-  if (!mayAutoOpen()) return;
+
+/* Time on the site: how long a page of it has been on screen this visit, kept in the visit's sessionStorage so it
+ * carries across pages. Someone who clicks to another page 3 s into a 4 s delay sees the dial 1 s into that page; a
+ * tab opened in the background starts counting when they look at it. A page always gets FIRST_LOOK_MS on screen
+ * before the dial covers it. */
+const FIRST_LOOK_MS = 1000;
+let shownAt = null, pageMs = 0, autoTimer = 0, autoReady = false, autoRetried = false;
+const sinceShown = () => (shownAt ? Date.now() - shownAt : 0);
+function siteMs() {
+  let ms = 0;
+  try { ms = JSON.parse(sessionStorage.getItem(VISIT) || '{}').activeMs || 0; } catch (e) {}
+  return ms + sinceShown();
+}
+function onShow() {
+  if (shownAt || document.visibilityState !== 'visible') return;
+  shownAt = Date.now();
+  scheduleAuto();
+}
+function onHide() {
+  clearTimeout(autoTimer);
+  if (!shownAt) return;
+  const ms = sinceShown(); shownAt = null; pageMs += ms;
+  try {
+    const s = JSON.parse(sessionStorage.getItem(VISIT) || 'null');
+    if (s) { s.activeMs = (s.activeMs || 0) + ms; sessionStorage.setItem(VISIT, JSON.stringify(s)); }
+  } catch (e) {}
+}
+function scheduleAuto(ms) {
+  clearTimeout(autoTimer);
+  if (!autoReady || !shownAt || !mayAutoOpen()) return;
+  if (ms === undefined) ms = Math.max(CFG.delayMs - siteMs(), Math.min(CFG.delayMs, FIRST_LOOK_MS) - (pageMs + sinceShown()));
+  autoTimer = setTimeout(tryAuto, Math.max(0, ms));
+}
+async function tryAuto() {
+  if (!shownAt || !mayAutoOpen()) return;
   const st = await getStatus();
-  if (!st || st.enabled === false) return;   // never interrupt a visitor just to say the dial is down
-  if (pricingOpen() || typing()) { if (!retried) setTimeout(() => tryAuto(true), 6000); return; }
+  if (!st || st.enabled === false || !shownAt) return;   // never interrupt a visitor just to say the dial is down
+  if (pricingOpen() || typing()) { if (!autoRetried) { autoRetried = true; scheduleAuto(6000); } return; }
   open('auto');
 }
 
@@ -836,14 +878,17 @@ async function init() {
     const t = e.target.closest && e.target.closest('[data-arr-dial="open"]');
     if (t) { e.preventDefault(); open('button'); }
   });
+  document.addEventListener('visibilitychange', () => (document.visibilityState === 'visible' ? onShow() : onHide()));
+  addEventListener('pagehide', onHide);
+  addEventListener('pageshow', onShow);   // back/forward cache
+  onShow();
   let forced = false;
   try { forced = new URLSearchParams(location.search).get('dial') === '1'; } catch (e) {}
-  const t0 = Date.now();
   mount();
   if (forced) { assign(); track('dial_assigned'); open('link'); return; }
   await getStatus();
   assign(); track('dial_assigned'); updateTab();
-  if (mayAutoOpen()) setTimeout(() => tryAuto(false), Math.max(0, CFG.delayMs - (Date.now() - t0)));
+  autoReady = true; scheduleAuto();
 }
 
 window.ARRDial = { open, close, get variant() { return variant; }, reset: () => { try { localStorage.removeItem(STORE); } catch (e) {} } };

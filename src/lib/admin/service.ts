@@ -6,14 +6,16 @@
  *                  15 minutes from one connection, or for one email, pause sign-in for that connection or email.
  *   publishConfig  validate, lay out the dial, insert as version N+1. Two people editing at once: the second publish
  *                  names the version it started from, finds a newer one, and is refused rather than overwriting.
- *   codeAction     redeem · void · restore · extend · resend, each written to the audit trail with who did it. */
-import { addDays, chicagoDay, chicagoMidnight, isCode, layoutZones, validateConfig } from '../rules.js';
+ *   codeAction     redeem · void · restore · extend · resend, each written to the audit trail with who did it.
+ *   freeYears      each month's free year as stored (won, held, free), for the Settings tab's schedule. */
+import { addDays, chicagoDay, chicagoMidnight, chicagoMonth, isCode, layoutZones, validateConfig } from '../rules.js';
 import { codeStatus } from '../db.ts';
 import { forgetConfig } from '../config.ts';
 import type { AdminDb, DialDb, Entry } from '../db.ts';
 import type { Cfg } from '../dial.ts';
 import type { PasswordAuth } from './auth.ts';
 import { SESSION_HOURS, type Session } from './session.ts';
+import { codeView, type CodeView } from './view.ts';
 
 type Store = DialDb & AdminDb;
 export type Fail = { ok: false; status: number; error: string; errors?: string[]; warnings?: string[] };
@@ -50,10 +52,12 @@ export async function signIn(db: Store, auth: PasswordAuth, input: { email: unkn
 const s = (v: unknown) => (typeof v === 'string' ? v.trim() : v);
 const strs = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : v);
 
-/** Only the fields the dial knows, strings trimmed. Anything else in a request is dropped, not stored. */
+/** Only the fields the dial knows, strings trimmed, free-year months in calendar order. Anything else in a request
+ *  is dropped, not stored. */
 export function cleanConfig(raw: any): Cfg {
   const r = raw && typeof raw === 'object' ? raw : {};
   const L = r.limits || {}, P = r.popup || {}, M = r.membership || {};
+  const months = strs(M.months);
   const gifts = (Array.isArray(r.gifts) ? r.gifts : []).map((g: any) => {
     const out: Record<string, unknown> = {
       id: s(g?.id), short: s(g?.short), name: s(g?.name), sub: s(g?.sub), weight: g?.weight, value: g?.value,
@@ -69,7 +73,7 @@ export function cleanConfig(raw: any): Cfg {
     expiresDays: r.expiresDays, holdMinutes: r.holdMinutes, zipPrefixes: strs(r.zipPrefixes),
     limits: { turnsPerDevicePerDay: L.turnsPerDevicePerDay, turnsPerIpPerDay: L.turnsPerIpPerDay, claimsPerIpPerDay: L.claimsPerIpPerDay },
     popup: { split: P.split, delayMs: P.delayMs, snoozeDays: P.snoozeDays, excludePaths: strs(P.excludePaths), tab: P.tab },
-    membership: { giftId: s(M.giftId), months: strs(M.months) },
+    membership: { giftId: s(M.giftId), months: Array.isArray(months) ? [...months].sort() : months },
     gifts, zones
   } as Cfg;
 }
@@ -90,7 +94,7 @@ export async function publishConfig(db: Store, builtIn: unknown, input: PublishI
   }
   const cfg = cleanConfig(input.config);
   cfg.zones = layoutZones(cfg.zones, cfg.gifts);
-  const { errors, warnings } = validateConfig(cfg, cur.config);
+  const { errors, warnings } = validateConfig(cfg, cur.config, { month: chicagoMonth(now), claimed: await db.claimedMonths() });
   if (errors.length) return fail(400, errors[0], { errors, warnings });
   const version = cur.version + 1;
   const note = String(input.note || '').trim().slice(0, 300) || null;
@@ -115,7 +119,8 @@ export async function setDialEnabled(db: Store, builtIn: unknown, input: { enabl
   }, now);
 }
 
-/** Publish an old version again. Gifts added since stay in the config, switched off, so their codes still resolve. */
+/** Publish an old version again. Gifts added since stay in the config, switched off, so their codes still resolve.
+ *  Free-year months won since stay on the schedule, because the official rules print them. */
 export async function rollbackTo(db: Store, builtIn: unknown, input: { version: unknown; baseVersion: unknown; by: string; ip: string | null }, now = new Date()): Promise<PublishOk | Fail> {
   const v = Number(input.version);
   if (!Number.isInteger(v) || v < 0) return fail(400, 'Pick a version to restore.');
@@ -124,7 +129,11 @@ export async function rollbackTo(db: Store, builtIn: unknown, input: { version: 
   const cur = await currentConfig(db, builtIn);
   const gifts = [...old.gifts];
   for (const g of cur.config.gifts) if (!gifts.some((x) => x.id === g.id)) gifts.push({ ...g, active: false });
-  return publishConfig(db, builtIn, { config: { ...old, gifts }, baseVersion: input.baseVersion, by: input.by, ip: input.ip, note: `Restored version ${v}`, action: 'rollback' }, now);
+  // The old free-year schedule, less months that have ended since (they can't be added back), plus months won since.
+  const listed = cur.config.membership.months, month = chicagoMonth(now);
+  const won = (await db.claimedMonths()).filter((m) => listed.includes(m));
+  const membership = { ...old.membership, months: [...new Set([...old.membership.months.filter((m) => m >= month || listed.includes(m)), ...won])] };
+  return publishConfig(db, builtIn, { config: { ...old, gifts, membership }, baseVersion: input.baseVersion, by: input.by, ip: input.ip, note: `Restored version ${v}`, action: 'rollback' }, now);
 }
 
 /* ---------------- codes ---------------- */
@@ -176,6 +185,26 @@ export async function codeAction(db: Store, input: CodeActionInput, now = new Da
   if (!out) return fail(404, `No code ${code}.`);
   await db.audit({ at, actor: input.by, action, target: code, detail: Object.keys(detail).length ? detail : null, ip: input.ip });
   return { ok: true, entry: out, action };
+}
+
+/* ---------------- free-year schedule ---------------- */
+
+/** won: claimed, with the code it went to · held: on someone's claim screen until held_until · free: a hold that ran
+ *  out unclaimed, so the month is open again */
+export type FreeYearState = 'won' | 'held' | 'free';
+export type FreeYearRow = { month: string; state: FreeYearState; held_until: string; claimed_at: string | null; entry: CodeView | null };
+
+/** Each month's free year as the database has it, for the Settings tab. `month` is this Chicago month. */
+export async function freeYears(db: Store, cfg: Cfg, now = new Date()): Promise<{ month: string; rows: FreeYearRow[] }> {
+  const [rows, entries] = await Promise.all([db.allMemberships(), db.membershipEntries()]);
+  return {
+    month: chicagoMonth(now),
+    rows: rows.map((m) => {
+      const e = m.claimed_at ? entries.find((x) => x.mem_month === m.mem_month && x.turn_id === m.turn_id) || entries.find((x) => x.mem_month === m.mem_month) : null;
+      const state: FreeYearState = m.claimed_at ? 'won' : new Date(m.held_until) >= now ? 'held' : 'free';
+      return { month: m.mem_month, state, held_until: m.held_until, claimed_at: m.claimed_at, entry: e ? codeView(e, cfg, now) : null };
+    })
+  };
 }
 
 /* ---------------- team ---------------- */

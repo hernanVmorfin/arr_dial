@@ -1,6 +1,6 @@
 # Comfort Dial runbook
 
-Setup, launch, the 50/50 test, and operations. Nothing reaches visitors until step 7 (the Webflow embed).
+Setup, launch, an optional split test, and operations. Nothing reaches visitors until step 7 (the Webflow embed).
 
 ## Launch checklist
 
@@ -34,7 +34,7 @@ In order. Each step is safe to stop after.
    | `PODIUM_CLIENT_ID`, `PODIUM_CLIENT_SECRET`, `PODIUM_REFRESH_TOKEN` | Podium's OAuth app and a refresh token (see [Podium sign-in](#podium-sign-in)). The Worker keeps the access token fresh itself |
    | `PODIUM_API_TOKEN` | Same as the pricing app. Used alone until the three above are set, then only if a refresh fails |
    | `PODIUM_LOCATION_UID` | Same as the pricing app |
-   | `KLAVIYO_PRIVATE_KEY` | Klaviyo → Settings → API keys → private key with write access to Profiles, Events and Subscriptions |
+   | `KLAVIYO_PRIVATE_KEY` | Klaviyo → Settings → API keys → private key with write access to Profiles, Events, Lists and Subscriptions (Klaviyo won't subscribe a reminder opt-in without Lists) |
    | `KLAVIYO_SMS_LIST_ID` | Optional: the list reminder opt-ins join |
    | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare → Turnstile → add widget for `alwaysreadyrepair.com` (Managed or Invisible) |
 
@@ -64,8 +64,9 @@ In order. Each step is safe to stop after.
    <script type="module" src="/dial/dial.js"></script>
    ```
 
-   Publish. The 50/50 test is now running at the split set in the admin (Settings → Visitors who get the popup,
-   50% to start). Don't put `split` or the other popup settings in the embed: the admin's win anyway.
+   Publish. Every visitor now sees the popup open after 4 seconds on the site (admin Settings → Visitors who get the
+   popup: 100%; Opens after: 4 sec). Don't put `split` or the other popup settings in the embed: the admin's win
+   anyway.
 8. **Live test**: open `https://www.alwaysreadyrepair.com/?dial=1`, turn, claim with your own phone. Confirm the
    text, the Monday item and the Klaviyo event. Then run `ARRDial.reset()` in the browser console and delete your row
    in `comfort_dial_entries` (and its turn in `comfort_dial_turns`). Each test needs a different phone.
@@ -81,17 +82,17 @@ without the embed. To pause without touching Webflow: admin → **Pause the dial
 no new turns are taken, and buttons show a call-us message. (Removing `SUPABASE_SECRET_KEY` still works as a last
 resort, but it takes the admin down too.)
 
-## The 50/50 test
+## A split test (optional)
 
-The admin's split (Settings → Visitors who get the popup) puts each visitor in the `dial` or `control` group. Each
-browser keeps a random number and is in `dial` while it is below the split, so changing the split only moves the
-visitors in between (50% → 100% moves the whole control group into `dial`; nobody already in `dial` leaves). Control
-never sees the popup open by itself or the side tab; `?dial=1` links and buttons still work for them, so ads can
-point anywhere.
+The popup starts at 100% of visitors. To measure what it does to bookings, lower Settings → Visitors who get the
+popup (50% for a 50/50 test). The split puts each visitor in the `dial` or `control` group. Each browser keeps a
+random number and is in `dial` while it is below the split, so changing the split only moves the visitors in between
+(50% → 100% moves the whole control group into `dial`; nobody already in `dial` leaves). Control never sees the popup
+open by itself or the side tab; `?dial=1` links and buttons still work for them, so ads can point anywhere.
 
 Every data-layer event carries `dial_variant`. Compare, per visitor, by group for 2 weeks: phone taps
 (`dial_call_clicked` plus the site's own call tracking), Book Service visits, and booked jobs. If the dial group
-books more, set the split to 100%. If it books less, set it to 0% (or remove the embed).
+books more, set the split back to 100%. If it books less, set it to 0% (or remove the embed).
 
 | Event | When |
 |---|---|
@@ -108,12 +109,17 @@ books more, set the split to 100%. If it books less, set it to 0% (or remove the
 ## Configuration
 
 The admin (`/dial/admin`) edits and publishes everything visitors see: promos, odds, dial layout, popup settings,
-limits, contact details, rules status. Each publish is a row in `comfort_dial_config`; the newest is live, and the
+free-year months, limits, contact details, rules status. Each publish is a row in `comfort_dial_config`; the newest is live, and the
 dial, the rules page and new turns pick it up within 15 seconds. History → Restore publishes an old one again.
 
 `data/dial.json` is version 0, the config until the first publish and the fallback if Supabase can't be read.
-Not in the admin yet: `membership.months`, which months have a free year. Every publish carries them over from the
-version before, so after the first publish, changing them is a developer job (or a future Settings field).
+
+Which months have a free year (`membership.months`) is Settings → Free-year schedule. Each month says whether its
+free year was won (by whom, with the code), is held on someone's claim screen right now, is up for grabs, or is
+still to come. The line under the dial and the rules page (its months and the dial's end date) follow a publish. A
+won month can't be taken off, because the rules print it; a month that has ended can't be added. A hold frees
+itself when its countdown runs out, so there is nothing to release by hand. History → Restore keeps won months and
+leaves out months that have ended since.
 
 Embed options (`window.__ARR_DIAL__`), all optional: `debug` (false, logs events to the console), `apiBase` (only if
 dial.js is served from elsewhere), `logoUrl`. Popup settings set here (`split`, `delayMs`, ...) are overridden by the

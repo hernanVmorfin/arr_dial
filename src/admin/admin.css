@@ -199,6 +199,26 @@ tr.click:hover td { background: color-mix(in srgb, var(--focus) 12%, transparent
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; padding: 3px 9px; border-radius: 99px; background: var(--panel); white-space: nowrap; }
 
+/* ---------------- free-year schedule (settings) ---------------- */
+.fy-sum { margin: 0; font-size: 14px; }
+.fy-line { quotes: "“" "”"; font-weight: 600; }
+.fy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; margin-top: 12px; }
+.fy { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 11px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--surface); cursor: pointer; }
+.fy input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: inherit; }
+.fy .fy-m { min-width: 0; font-size: 14.5px; }
+.fy small { grid-column: 2 / -1; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.fy small b { color: var(--text); font-weight: 600; }
+.fy.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.fy.is-now { box-shadow: inset 4px 0 0 var(--arr-red); }
+.fy.is-past:not(.is-on) { opacity: .75; }
+.fy.is-changed { border-style: dashed; }
+.fy:has(input:disabled) { cursor: default; }
+.tag.won { background: var(--arr-navy); color: #fff; }
+.tag.held { background: var(--arr-yellow); color: var(--arr-navy); }
+.tag.open { background: var(--arr-blue); color: #fff; }
+.tag.soon { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.tag.missed { background: var(--panel); color: var(--muted); }
+
 /* ---------------- draft bar ---------------- */
 .draftbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--arr-navy); color: var(--arr-white); border-top: 4px solid var(--arr-red); box-shadow: 0 -12px 30px -16px rgba(0, 0, 0, .5); }
 .draftbar-in { max-width: 1240px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

@@ -137,6 +137,11 @@ export interface AdminDb {
   /** Compare-and-set: only a code that is neither redeemed nor void. */
   redeemEntry(id: string, now: Date, note: string): Promise<Entry | null>;
   stats(since: Date, until: Date): Promise<Stats>;
+
+  /** Every month's free-year row (held or claimed), oldest month first. A month nobody has turned for has none. */
+  allMemberships(): Promise<Membership[]>;
+  /** The codes issued for a free year (entries with a mem_month). */
+  membershipEntries(): Promise<Entry[]>;
 }
 
 /** What the code-lookup box was given: a code (with or without ARR-), part of a phone number, or a name or street. */

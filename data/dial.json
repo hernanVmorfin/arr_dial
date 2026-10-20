@@ -14,8 +14,8 @@
     "claimsPerIpPerDay": 6
   },
   "popup": {
-    "split": 0.5,
-    "delayMs": 2000,
+    "split": 1,
+    "delayMs": 4000,
     "snoozeDays": 7,
     "excludePaths": ["/instant-pricing", "/about/transparent-pricing", "/book-service", "/contact-us", "/financing-offers", "/pay"],
     "tab": true
