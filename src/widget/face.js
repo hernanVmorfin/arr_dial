@@ -16,15 +16,17 @@ const arcPath = (a0, a1, r) => { const [x0, y0] = pt(a0, r), [x1, y1] = pt(a1, r
 const segPath = (a0, a1, ro, ri) => { const [x0, y0] = pt(a0, ro), [x1, y1] = pt(a1, ro), [x2, y2] = pt(a1, ri), [x3, y3] = pt(a0, ri), lg = a1 - a0 > 180 ? 1 : 0;
   return `M${x0} ${y0}A${ro} ${ro} 0 ${lg} 1 ${x1} ${y1}L${x2} ${y2}A${ri} ${ri} 0 ${lg} 0 ${x3} ${y3}Z`; };
 
-/** Everything inside the dial's <svg viewBox="0 0 400 400">: the black glass, the red heating glow (hidden until the
- *  popup's CSS shows it), the ring, the needle, the white readout disc and the tag. `ids` prefixes the defs' ids. */
+/** Everything inside the dial's <svg viewBox="0 0 400 400">: the black glass, the red heating and blue cooling glows
+ *  (hidden until the popup's CSS shows one), the ring, the needle, the white readout disc and the tag. `ids` prefixes the defs' ids. */
 export const svgInner = (ids = 'arrd') => `
       <defs>
         <radialGradient id="${ids}-heat" cx="50%" cy="49%" r="54%"><stop offset="0" stop-color="#ee292f" stop-opacity=".42"/><stop offset=".6" stop-color="#ee292f" stop-opacity=".12"/><stop offset="1" stop-color="#ee292f" stop-opacity="0"/></radialGradient>
+        <radialGradient id="${ids}-cool" cx="50%" cy="49%" r="54%"><stop offset="0" stop-color="#03bce6" stop-opacity=".42"/><stop offset=".6" stop-color="#03bce6" stop-opacity=".12"/><stop offset="1" stop-color="#03bce6" stop-opacity="0"/></radialGradient>
         <filter id="${ids}-gold" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
       </defs>
       <rect width="400" height="400" rx="86" fill="#221f20"/>
       <rect class="arrd-heat" width="400" height="400" fill="url(#${ids}-heat)" opacity="0"/>
+      <rect class="arrd-cool" width="400" height="400" fill="url(#${ids}-cool)" opacity="0"/>
       <g transform="translate(${CX} ${CY})">
         <g data-arrd="face"></g>
         <g data-arrd="marker">
