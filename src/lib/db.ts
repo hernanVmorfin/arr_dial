@@ -47,7 +47,17 @@ export type InsertResult =
   | { ok: true; entry: Entry }
   | { ok: false; conflict: 'code' | 'phone' | 'turn' | 'membership' | 'other'; detail?: string };
 
-export interface DialDb {
+/* OAuth tokens that expire (supabase/migrations/20261021_comfort_dial_oauth.sql): the newest access/refresh pair per
+ * provider, shared by every isolate. Only Podium's today (lib/podium.ts). */
+export type OAuthToken = { provider: string; access_token: string; refresh_token: string; expires_at: string; updated_at: string };
+export interface TokenStore {
+  /** null when there is no pair yet, or the table doesn't exist yet. */
+  oauthToken(provider: string): Promise<OAuthToken | null>;
+  /** Insert or replace the provider's pair. */
+  saveOAuthToken(t: OAuthToken): Promise<void>;
+}
+
+export interface DialDb extends TokenStore {
   countTurns(since: Date, by: { ip?: string; device?: string }): Promise<number>;
   countEntries(since: Date, ip: string): Promise<number>;
   membership(month: string): Promise<Membership | null>;
@@ -127,6 +137,11 @@ export interface AdminDb {
   /** Compare-and-set: only a code that is neither redeemed nor void. */
   redeemEntry(id: string, now: Date, note: string): Promise<Entry | null>;
   stats(since: Date, until: Date): Promise<Stats>;
+
+  /** Every month's free-year row (held or claimed), oldest month first. A month nobody has turned for has none. */
+  allMemberships(): Promise<Membership[]>;
+  /** The codes issued for a free year (entries with a mem_month). */
+  membershipEntries(): Promise<Entry[]>;
 }
 
 /** What the code-lookup box was given: a code (with or without ARR-), part of a phone number, or a name or street. */

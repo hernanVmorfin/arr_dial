@@ -9,8 +9,10 @@ In order. Each step is safe to stop after.
 1. **Supabase**: SQL Editor in project `dienlkpgmgetkkdyduap` (the Instant Pricing project) → run
    `supabase/migrations/20261016_comfort_dial.sql`, then `20261019_comfort_dial_admin.sql` (the admin's tables and the
    results function), then `20261020_comfort_dial_context.sql` (visit, home and earlier-contact columns, and
-   `comfort_dial_home`, which reads the pricing app's county tables). They only create `comfort_dial_*` objects.
-   (All three were applied on Oct 19, 2026 through the Supabase connector.) If an empty `dial_entries`
+   `comfort_dial_home`, which reads the pricing app's county tables), then `20261021_comfort_dial_oauth.sql` (where
+   the Podium token is kept, so every isolate shares it). They only create `comfort_dial_*` objects.
+   (The first three were applied on Oct 19, 2026 through the Supabase connector; the OAuth one is newer. Texts go
+   out without it, but each isolate then refreshes the Podium token for itself.) If an empty `dial_entries`
    table exists from the earlier PR #10 migration, it can be dropped; nothing reads it.
    **First admin**: Authentication → Users → Add user → email + password, auto-confirm. Then in the SQL editor:
    `insert into public.comfort_dial_admins (email, name) values ('jason@arrhvac.com', 'Jason');`. Everyone after
@@ -29,14 +31,18 @@ In order. Each step is safe to stop after.
    | `MONDAY_API_TOKEN`, `MONDAY_BOARD_ID` | Same as the pricing app (board 18432287526) |
    | `MONDAY_CODE_STATUS_COLUMN` | Id of the new "Code status" column (step 5) |
    | `MONDAY_WEBHOOK_SECRET` | A long random string; also goes in the webhook URL (step 5) |
-   | `PODIUM_API_TOKEN`, `PODIUM_LOCATION_UID` | Same as the pricing app |
-   | `KLAVIYO_PRIVATE_KEY` | Klaviyo → Settings → API keys → private key with write access to Profiles, Events and Subscriptions |
+   | `PODIUM_CLIENT_ID`, `PODIUM_CLIENT_SECRET`, `PODIUM_REFRESH_TOKEN` | Podium's OAuth app and a refresh token (see [Podium sign-in](#podium-sign-in)). The Worker keeps the access token fresh itself |
+   | `PODIUM_API_TOKEN` | Same as the pricing app. Used alone until the three above are set, then only if a refresh fails |
+   | `PODIUM_LOCATION_UID` | Same as the pricing app |
+   | `KLAVIYO_PRIVATE_KEY` | Klaviyo → Settings → API keys → private key with write access to Profiles, Events, Lists and Subscriptions (Klaviyo won't subscribe a reminder opt-in without Lists) |
    | `KLAVIYO_SMS_LIST_ID` | Optional: the list reminder opt-ins join |
    | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare → Turnstile → add widget for `alwaysreadyrepair.com` (Managed or Invisible) |
 
    `wrangler.json` keeps `"keep_vars": true` so deploys don't wipe these (the pricing app learned this the hard way).
 4. **Check the deploy**: `https://www.alwaysreadyrepair.com/dial/api/health?deep=1`
    - `dial: true`, `integrations.supabase: "ok"`, and every integration you configured is `true`.
+   - `integrations.podiumAuth.mode` should be `"oauth"`. `"static"` means the three OAuth keys aren't all set and
+     texts depend on the pricing app's token (see [Podium sign-in](#podium-sign-in)).
    - **`yourIp` must be your own public IP.** If it shows the same address for everyone (a Webflow proxy), set
      `DIAL_IP_LIMITS=off`, or the per-IP limits will block real visitors.
    - `yourPlace` should be your city and ZIP. If it's `null`, Webflow Cloud isn't passing Cloudflare's location and
@@ -103,12 +109,17 @@ books more, set the split back to 100%. If it books less, set it to 0% (or remov
 ## Configuration
 
 The admin (`/dial/admin`) edits and publishes everything visitors see: promos, odds, dial layout, popup settings,
-limits, contact details, rules status. Each publish is a row in `comfort_dial_config`; the newest is live, and the
+free-year months, limits, contact details, rules status. Each publish is a row in `comfort_dial_config`; the newest is live, and the
 dial, the rules page and new turns pick it up within 15 seconds. History → Restore publishes an old one again.
 
 `data/dial.json` is version 0, the config until the first publish and the fallback if Supabase can't be read.
-Not in the admin yet: `membership.months`, which months have a free year. Every publish carries them over from the
-version before, so after the first publish, changing them is a developer job (or a future Settings field).
+
+Which months have a free year (`membership.months`) is Settings → Free-year schedule. Each month says whether its
+free year was won (by whom, with the code), is held on someone's claim screen right now, is up for grabs, or is
+still to come. The line under the dial and the rules page (its months and the dial's end date) follow a publish. A
+won month can't be taken off, because the rules print it; a month that has ended can't be added. A hold frees
+itself when its countdown runs out, so there is nothing to release by hand. History → Restore keeps won months and
+leaves out months that have ended since.
 
 Embed options (`window.__ARR_DIAL__`), all optional: `debug` (false, logs events to the console), `apiBase` (only if
 dial.js is served from elsewhere), `logoUrl`. Popup settings set here (`split`, `delayMs`, ...) are overridden by the
@@ -136,6 +147,41 @@ admin's; `force: {...}` overrides the admin (the QA page at `/dial/` uses it).
 - **Change gifts or odds**: admin → Promos & odds → Review & publish. The dial, the odds panel and the rules page all
   redraw from it. Turns already taken keep the odds they were played under (`comfort_dial_turns.config_version`).
 
+## Podium sign-in
+
+Podium's API is OAuth 2 ([docs](https://docs.podium.com/docs/oauth)). An access token lasts 10 hours; a refresh
+token gets a new one from `https://api.podium.com/oauth/token`. The Worker does that by itself shortly before the
+token runs out, and keeps the newest pair in Supabase `comfort_dial_oauth`, so every isolate uses the same one and a
+refresh token Podium hands back isn't lost. If Podium refuses a token early (a 401), the Worker refreshes once and
+sends again. A text that still fails never blocks the win; it shows in the Webflow Cloud logs as `dial win`
+(`podium ...`), and admin → Codes → **Text it again** works once Podium is back.
+
+**Getting the first refresh token** (once; again only if Podium revokes the app's access):
+
+1. In [developer.podium.com](https://developer.podium.com), open ARR's app (or create one) and note its **Client ID**
+   and **Client Secret**. Its redirect URI must be HTTPS and match exactly. Any page ARR controls will do (for example
+   `https://www.alwaysreadyrepair.com/`), since you only need the `code` Podium adds to the address bar.
+2. Signed in to Podium as an ARR admin, open:
+   `https://api.podium.com/oauth/authorize?client_id=<CLIENT_ID>&redirect_uri=<REDIRECT_URI>&scope=write_messages%20read_locations&state=dial`
+   and approve. Podium sends you to the redirect URI with `?code=...&state=dial`. Copy the code (it is short-lived).
+3. Trade it for tokens:
+
+   ```bash
+   curl -s https://api.podium.com/oauth/token -H 'Content-Type: application/json' -d '{"client_id":"<CLIENT_ID>","client_secret":"<CLIENT_SECRET>","redirect_uri":"<REDIRECT_URI>","code":"<CODE>","grant_type":"authorization_code"}'
+   ```
+
+4. Set `PODIUM_CLIENT_ID`, `PODIUM_CLIENT_SECRET` and `PODIUM_REFRESH_TOKEN` (the `refresh_token` from step 3) in the
+   Webflow Cloud app's environment. Keep `PODIUM_API_TOKEN` and `PODIUM_LOCATION_UID` as they are.
+5. Check `/dial/api/health?deep=1`: `podiumAuth.mode` is `"oauth"`. After the next text (a win or **Text it again**),
+   `podiumAuth.expiresAt` shows when the shared token runs out and `refreshedAt` when it was last refreshed.
+
+**If the logs show `podium token 400` or `401`** (under `dial podium refresh failed` or `dial win`), the refresh token
+is no longer accepted (revoked, or the app's access was removed). Texts then go out on `PODIUM_API_TOKEN` while it
+lasts. Repeat the steps above and set the new `PODIUM_REFRESH_TOKEN`: the Worker tries the stored refresh token
+first and falls back to the env one when Podium refuses it. To move to a different Podium account or app, also
+delete the `podium` row in `comfort_dial_oauth`, or the stored token keeps being used until it expires. Otherwise
+leave that row alone: if Podium rotates refresh tokens, the newest one is only there.
+
 ## Known limits
 
 - The household rule for regular gifts is checked by the CSR at booking, not online: the claim asks only for a phone.
@@ -143,4 +189,7 @@ admin's; `force: {...}` overrides the admin (the QA page at `/dial/` uses it).
 - ZIP check is by prefix (604, 605, 606), not the exact service-area list.
 - Address autocomplete is not in the popup; only free-year winners and the optional step type an address.
 - Codes aren't enforced in Sera (no API); the single-use rule is the CSR checking Code status.
-- The Podium token is the pricing app's static token; if Podium expires it, texts stop (the win still shows on screen).
+- Until `PODIUM_CLIENT_ID`, `PODIUM_CLIENT_SECRET` and `PODIUM_REFRESH_TOKEN` are set, texts use the pricing app's
+  static token and stop when Podium expires it (the win still shows on screen). See [Podium sign-in](#podium-sign-in).
+- Two isolates whose tokens run out at the same moment can both refresh. The one Podium refuses picks up the other's
+  pair from Supabase. Podium's docs don't say whether refresh tokens rotate, so this is handled both ways.

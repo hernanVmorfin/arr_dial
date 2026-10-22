@@ -6,8 +6,8 @@
  * the admin (<base>admin). data/dial.json is bundled only as the fallback drawn before that answer arrives.
  *
  * An ARR smart thermostat on the wall: gifts sit on a 50–90°F ring (face.js), arc length = the real odds, the free
- * year raised as the top prize. The first screen is only the thermostat, floating over the page; the card with the
- * claim form comes in after a win. Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never
+ * year raised as the top prize. The first screen is only the thermostat, floating over the page, with the free-year
+ * line under it; the card with the claim form comes in after a win. Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never
  * this file, and holds it for a few minutes), then a mobile number claims it (/api/claim). A free-year winner also
  * gives a home address. The screen wakes with the time and the visitor's own weather (/api/weather), heats (red) while
  * the needle climbs and cools (blue) while it falls, shows a HOLD countdown while they claim, and ends on their code.
@@ -23,6 +23,7 @@
 import BUILT_IN from '../../data/dial.json';
 import { svgInner, drawFace, hubSize, angToF, fToAng, A0, A1, VIEWBOX } from './face.js';
 import { adParams, pathOf, referrerOf, cookieOf, gaClientId, klaviyoExchangeId, deviceKind, UTM_KEYS } from '../lib/visit.js';
+import { scarcityLine } from '../lib/rules.js';
 
 const EMBED = window.__ARR_DIAL__ || {};
 const CFG = Object.assign({
@@ -187,6 +188,8 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-bare .arrd-dev{width:min(420px,86vw,60vh);margin:0 auto}
 .arrd-bare [data-arrd="play"]{position:relative;margin-top:12px;gap:8px}
 .arrd-bare .arrd-no{color:var(--white);opacity:.9}
+.arrd-scar{font:600 14px/1.35 var(--sub);text-transform:uppercase;letter-spacing:.08em;color:var(--yellow);text-shadow:0 1px 3px rgba(0,0,0,.55);text-align:center;text-wrap:balance}
+.arrd-scar:empty{display:none}
 .arrd-bare .arrd-err{color:#fff;background:var(--red);border-radius:8px;padding:8px 12px;font-size:13.5px;text-align:center;max-width:min(420px,86vw)}
 .arrd-bare .arrd-odds{position:absolute;z-index:3;left:0;right:0;bottom:calc(100% + 10px);max-height:min(60vh,390px);overflow-y:auto;background:var(--white);border:0;border-radius:14px;padding:12px 14px;box-shadow:0 18px 40px -12px rgba(0,0,0,.55)}
 
@@ -331,6 +334,7 @@ const MARKUP = `
     </div>
   </div>
   <section class="arrd-sec arrd-center" data-arrd="play">
+    <p class="arrd-scar" data-arrd="scar" aria-live="polite"></p>
     <p class="arrd-err" data-arrd="playErr" role="alert"></p>
     <div data-arrd="ts"></div>
     <button class="arrd-no" type="button" data-arrd="oddsBtn" aria-expanded="false">Odds &amp; rules</button>
@@ -502,7 +506,8 @@ function turnstileToken() {
   return new Promise((res) => { tsWaiters.push((t) => res(t ? use(t) : null)); setTimeout(() => res(null), 10000); });
 }
 
-/* ---------------- odds ---------------- */
+/* ---------------- status line and odds ---------------- */
+function renderScarcity(st) { $('scar').textContent = scarcityLine(st); }
 function renderOdds() {
   if (!root) return;
   const pool = DIAL.gifts.filter((g) => g.id !== MEM || memOpen), tot = pool.reduce((s, g) => s + g.weight, 0);
@@ -525,7 +530,7 @@ async function loadStatus() {
   statusLoaded = true;
   if (st.enabled === false) { if (!$('play').hidden) showMsg('The dial is resting', `We can still take care of you. Call ${DIAL.phone}.`); return; }
   memOpen = !!st.membershipOpen;
-  renderOdds(); buildFace();
+  renderScarcity(st); renderOdds(); buildFace();
   loadTurnstile(st.turnstileSiteKey);
 }
 

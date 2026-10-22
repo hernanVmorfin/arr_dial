@@ -137,7 +137,8 @@ const FORMS = {
   resend: (e) => ({ title: 'Text the code again', body: `<p style="margin:0">Podium texts ${esc(e.code)} to ${esc(fmtPhone(e.phone))} from ARR's number, with the gift and expiry date. Up to 3 times a day.</p>`, label: 'Send the text', kind: '' })
 };
 
-async function openCode(code) {
+/** One code in a dialog with its actions and history. Settings opens it too, from a won free-year month. */
+export async function openCode(code) {
   let r = await api(`code?code=${encodeURIComponent(code)}`);
   if (!r.ok) { toast(r.error || 'Couldn\'t open that code.', true); return; }
   const paint = (d) => {

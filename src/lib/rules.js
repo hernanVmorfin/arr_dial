@@ -57,6 +57,39 @@ export function membershipsLeft(cfg, month, claimedMonths) {
   return cfg.membership.months.filter((m) => m >= month && !taken.has(m)).length;
 }
 
+/** 'October 2026' for '2026-10' (or 'October' with year: false). */
+export function monthName(ym, { year = true } = {}) {
+  const [y, m] = String(ym).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 15)).toLocaleString('en-US', { month: 'long', ...(year ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+}
+
+/** What /api/status says about the free year in `month`, given the months already claimed. freeYear: the free-year
+ *  gift is on the dial at all; inSeason: this month is on the schedule. */
+export function freeYearStatus(cfg, month, claimedMonths) {
+  const on = membershipActive(cfg);
+  return {
+    month,
+    freeYear: on,
+    inSeason: on && inSeason(cfg, month),
+    membershipOpen: on && inSeason(cfg, month) && !claimedMonths.includes(month),
+    membershipsLeft: on ? membershipsLeft(cfg, month, claimedMonths) : 0,
+    membershipsTotal: cfg.membership.months.length,
+    nextUnlock: on ? nextMembershipMonth(cfg, month) : null
+  };
+}
+
+/** The line under the dial, from freeYearStatus (the popup's /api/status, or the admin's preview of a draft). Empty
+ *  when the free year is off the dial or the status couldn't be read. */
+export function scarcityLine(st) {
+  if (!st || st.freeYear === false) return '';
+  const name = (ym) => monthName(ym, { year: false });
+  if (st.membershipsLeft === 0) return 'This season\'s free years are all claimed';
+  if (st.membershipOpen) return `${name(st.month)}'s free year is still up for grabs`;
+  if (st.nextUnlock && st.inSeason === false) return `${name(st.nextUnlock)}'s free year unlocks ${name(st.nextUnlock).slice(0, 3)} 1`;
+  if (st.nextUnlock) return `${name(st.month)}'s free year is taken. Next one: ${name(st.nextUnlock).slice(0, 3)} 1`;
+  return '';
+}
+
 /** Gifts on the dial. A switched-off gift (active: false) stays in the config so codes already issued for it still
  *  resolve, but it has no odds and no arc. */
 export const activeGifts = (cfg) => cfg.gifts.filter((g) => g.active !== false);
@@ -172,10 +205,12 @@ export function contrast(a, b) {
 }
 
 /** Everything a config must satisfy before it goes live. `prev` is the version it replaces: a gift that was ever
- *  published can be switched off but never removed, because codes already issued point at it.
- *  @param {any} cfg  @param {any} [prev]
+ *  published can be switched off but never removed, because codes already issued point at it. `ctx` adds what only
+ *  the database knows, for the free-year schedule: this Chicago month (a month that has ended can't be added) and
+ *  the months whose free year was won (they stay listed, because the official rules print them).
+ *  @param {any} cfg  @param {any} [prev]  @param {{ month?: string, claimed?: string[] }} [ctx]
  *  @returns {{ errors: string[], warnings: string[] }} */
-export function validateConfig(cfg, prev = null) {
+export function validateConfig(cfg, prev = null, ctx = {}) {
   const errors = [], warnings = [];
   const err = (m) => errors.push(m), warn = (m) => warnings.push(m);
   const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -222,6 +257,13 @@ export function validateConfig(cfg, prev = null) {
   }
   if (!ids.has(M.giftId)) err('The free-year gift is missing.');
   if (!Array.isArray(M.months) || M.months.some((m) => !/^\d{4}-(0[1-9]|1[0-2])$/.test(m)) || new Set(M.months).size !== M.months.length) err('Free-year months must be distinct YYYY-MM values.');
+  else if (!M.months.length) err('Free-year months: pick at least one. The rules page dates the dial by them. To stop giving free years, switch the free year off in Promos & odds.');
+  else if (M.months.some((m, i) => i && m < M.months[i - 1])) err('Free-year months must be in calendar order.');
+  const prevMonths = Array.isArray(prev?.membership?.months) ? prev.membership.months : null;
+  if (prevMonths && Array.isArray(M.months)) {
+    for (const m of prevMonths) if (ctx.claimed?.includes(m) && !M.months.includes(m)) err(`Free-year months: ${monthName(m)}'s free year was won, so it stays on the schedule and in the official rules.`);
+    for (const m of M.months) if (ctx.month && m < ctx.month && !prevMonths.includes(m)) err(`Free-year months: ${monthName(m)} has ended, so it can't be added.`);
+  }
   if (prev && Array.isArray(prev.gifts)) for (const g of prev.gifts) if (!ids.has(g.id)) err(`${g.name} was published before, so codes may point at it. Switch it off instead of deleting it.`);
 
   const on = gifts.filter((g) => g && g.active !== false);

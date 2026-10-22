@@ -165,3 +165,35 @@ test('Chicago days and midnights across daylight saving', () => {
   assert.equal(chicagoMidnight('2026-11-01').toISOString(), '2026-11-01T05:00:00.000Z');   // the night clocks fall back
   assert.equal(addDays('2026-03-01', -1), '2026-02-28');
 });
+
+/* ---------------- the free-year schedule ---------------- */
+import { freeYearStatus, scarcityLine, monthName } from './rules.js';
+
+const withMonths = (months) => ({ ...clone(cfg), membership: { ...cfg.membership, months } });
+
+test('validateConfig: free-year months are listed and in order; a won month stays; an ended month can\'t be added', () => {
+  assert.match(validateConfig(withMonths([])).errors.join(' '), /pick at least one/);
+  assert.match(validateConfig(withMonths(['2026-11', '2026-10'])).errors.join(' '), /calendar order/);
+  assert.match(validateConfig(withMonths(['2026-10', '2026-10'])).errors.join(' '), /distinct/);
+  const ctx = { month: '2026-11', claimed: ['2026-10'] };
+  assert.match(validateConfig(withMonths(['2026-11', '2026-12']), cfg, ctx).errors.join(' '), /October 2026's free year was won/);
+  assert.match(validateConfig(withMonths(['2026-09', ...cfg.membership.months]), cfg, ctx).errors.join(' '), /September 2026 has ended/);
+  assert.deepEqual(validateConfig(withMonths(['2026-10', '2026-12', '2027-03']), cfg, ctx).errors, [], 'drop months to come, add a later one');
+  assert.deepEqual(validateConfig(withMonths(['2026-10', '2026-11']), withMonths(['2026-09', '2026-10', '2026-11']), ctx).errors, [], 'an ended month nobody won can go');
+  assert.deepEqual(validateConfig(withMonths(['2026-11']), cfg).errors, [], 'without the database, only the shape is checked');
+});
+
+test('the line under the dial follows the schedule', () => {
+  const s = withMonths(['2026-10', '2026-12']);
+  assert.equal(scarcityLine(freeYearStatus(s, '2026-10', [])), 'October\'s free year is still up for grabs');
+  assert.equal(scarcityLine(freeYearStatus(s, '2026-10', ['2026-10'])), 'October\'s free year is taken. Next one: Dec 1');
+  assert.equal(scarcityLine(freeYearStatus(s, '2026-11', ['2026-10'])), 'December\'s free year unlocks Dec 1', 'a month with none says when the next comes');
+  assert.equal(scarcityLine(freeYearStatus(s, '2026-09', [])), 'October\'s free year unlocks Oct 1', 'before the season');
+  assert.equal(scarcityLine(freeYearStatus(s, '2026-12', ['2026-10', '2026-12'])), 'This season\'s free years are all claimed');
+  const off = clone(s);
+  off.gifts.find((g) => g.id === 'mem').active = false;
+  assert.equal(scarcityLine(freeYearStatus(off, '2026-10', [])), '', 'nothing about a free year that is off the dial');
+  assert.equal(scarcityLine(null), '');
+  assert.deepEqual(freeYearStatus(s, '2026-11', []), { month: '2026-11', freeYear: true, inSeason: false, membershipOpen: false, membershipsLeft: 1, membershipsTotal: 2, nextUnlock: '2026-12' });
+  assert.deepEqual([monthName('2027-01'), monthName('2026-12', { year: false })], ['January 2027', 'December']);
+});

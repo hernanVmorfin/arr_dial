@@ -3,13 +3,13 @@
  * (the filter names the state we expect), so two visitors racing for the same month can't both win it: Postgres
  * re-checks the WHERE clause after the first writer commits and the second update matches nothing. */
 import { parseSearch } from './db.ts';
-import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, Home, InsertResult, Membership, NewEntry, Stats, Turn } from './db.ts';
+import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, Home, InsertResult, Membership, NewEntry, OAuthToken, Stats, Turn } from './db.ts';
 import { envVar } from './env.ts';
 
 const TIMEOUT_MS = 4000;
 const T = {
   turns: 'comfort_dial_turns', entries: 'comfort_dial_entries', memberships: 'comfort_dial_memberships',
-  config: 'comfort_dial_config', admins: 'comfort_dial_admins', audit: 'comfort_dial_audit'
+  config: 'comfort_dial_config', admins: 'comfort_dial_admins', audit: 'comfort_dial_audit', oauth: 'comfort_dial_oauth'
 };
 
 export function supabaseConfig(env: unknown) {
@@ -214,10 +214,25 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
     async serviceZips() {
       return rows<{ zip: string; name: string }>(await call('GET', 'service_area_zips', { select: 'zip,name', active: 'is.true', order: 'priority.asc,zip.asc' }), 'service zips');
     },
+    /* Before the OAuth migration has run there is no table: PostgREST answers 404 and each isolate keeps its own token. */
+    async oauthToken(provider) {
+      const res = await call('GET', T.oauth, { select: '*', provider: `eq.${provider}` });
+      if (res.status === 404) return null;
+      return one<OAuthToken>(res, 'oauth token');
+    },
+    async saveOAuthToken(t) {
+      const res = await call('POST', T.oauth, { on_conflict: 'provider' }, { body: t, prefer: 'resolution=merge-duplicates,return=minimal' });
+      if (!res.ok) throw new Error(`supabase save oauth ${res.status} ${(await res.text()).slice(0, 200)}`);
+    },
     async stats(since, until) {
       const res = await call('POST', 'rpc/comfort_dial_stats', {}, { body: { p_since: iso(since), p_until: iso(until) } });
       if (!res.ok) throw new Error(`supabase stats ${res.status} ${(await res.text()).slice(0, 200)}`);
       return (await res.json()) as Stats;
+    },
+
+    async allMemberships() { return rows<Membership>(await call('GET', T.memberships, { select: '*', order: 'mem_month.asc' }), 'memberships'); },
+    async membershipEntries() {
+      return rows<Entry>(await call('GET', T.entries, { select: '*', mem_month: 'not.is.null', order: 'mem_month.asc' }), 'membership entries');
     }
   };
 }
