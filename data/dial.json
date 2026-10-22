@@ -1,5 +1,5 @@
 {
-  "_note": "Comfort Dial gifts, odds and rules: the built-in starting version (version 0). Once someone publishes from the admin (<base>/admin), the live version is the newest row of Supabase comfort_dial_config and this file is only the fallback. Code never hard-codes a gift, price or date. Each active gift's weight is both its real odds and its arc on the dial: active weights sum to 100 and each gift's zones sum to its weight (validateConfig in src/lib/rules.js; npm test fails otherwise). The free year is in play only during a month listed in membership.months, at most one per month, and drops out of the odds while unavailable.",
+  "_note": "Comfort Dial gifts, odds and rules: the built-in starting version (version 0). Once someone publishes from the admin (<base>/admin), the live version is the newest row of Supabase comfort_dial_config and this file is only the fallback. Code never hard-codes a gift, price or date. Each active gift's weight is both its real odds and its arc on the dial: active weights sum to 100 and each gift's zones sum to its weight (validateConfig in src/lib/rules.js; npm test fails otherwise). The free year is in play only during a month listed in membership.months, at most one per month, and drops out of the odds while unavailable. Each gift's codePrefix starts its codes (SVC20-7K3PK) and never changes once published; seraLine is the discount the CSR applies in Sera; an optional expiresDays overrides the default expiresDays.",
   "enabled": true,
   "season": "Furnace season",
   "phone": "(708) 671-0813",
@@ -25,11 +25,11 @@
     "months": ["2026-10", "2026-11", "2026-12", "2027-01", "2027-02"]
   },
   "gifts": [
-    { "id": "svc20",  "short": "$20 OFF",              "name": "$20 off any service",                  "sub": "Any repair or tune-up, no minimum",                                          "weight": 45, "value": 20,  "fill": "#084e91", "ink": "#f9f7f8" },
-    { "id": "duct50", "short": "$50 OFF DUCTS",        "name": "$50 off duct cleaning",                "sub": "Whole-home duct cleaning",                                                   "weight": 20, "value": 50,  "fill": "#03bce6", "ink": "#14284e" },
-    { "id": "wh50",   "short": "$50 OFF WATER HEATER", "name": "$50 off a new water heater",           "sub": "Installed by ARR",                                                           "weight": 15, "value": 50,  "fill": "#ee292f", "ink": "#f9f7f8" },
-    { "id": "call",   "short": "$129 FREE CALL",       "name": "Free service call ($129 value)",       "sub": "We waive the $129 trip fee. Any repair is billed at our published price",  "weight": 15, "value": 129, "fill": "#dee5ee", "ink": "#14284e" },
-    { "id": "mem",    "short": "$299 FREE YEAR",       "name": "Free year of membership ($299 value)", "sub": "Our $299 membership, free for 12 months",                                    "weight": 5,  "value": 299, "fill": "#ffcc04", "ink": "#14284e" }
+    { "id": "svc20",  "short": "$20 OFF",              "name": "$20 off any service",                  "sub": "Any repair or tune-up, no minimum",                                          "weight": 45, "value": 20,  "fill": "#084e91", "ink": "#f9f7f8", "codePrefix": "SVC20", "seraLine": "Comfort Dial $20" },
+    { "id": "duct50", "short": "$50 OFF DUCTS",        "name": "$50 off duct cleaning",                "sub": "Whole-home duct cleaning",                                                   "weight": 20, "value": 50,  "fill": "#03bce6", "ink": "#14284e", "codePrefix": "DUCT50", "seraLine": "Comfort Dial $50 ducts" },
+    { "id": "wh50",   "short": "$50 OFF WATER HEATER", "name": "$50 off a new water heater",           "sub": "Installed by ARR",                                                           "weight": 15, "value": 50,  "fill": "#ee292f", "ink": "#f9f7f8", "codePrefix": "WH50", "seraLine": "Comfort Dial $50 water heater" },
+    { "id": "call",   "short": "$129 FREE CALL",       "name": "Free service call ($129 value)",       "sub": "We waive the $129 trip fee. Any repair is billed at our published price",  "weight": 15, "value": 129, "fill": "#dee5ee", "ink": "#14284e", "codePrefix": "CALL", "seraLine": "Free service call (waive the $129 trip fee)" },
+    { "id": "mem",    "short": "$299 FREE YEAR",       "name": "Free year of membership ($299 value)", "sub": "Our $299 membership, free for 12 months",                                    "weight": 5,  "value": 299, "fill": "#ffcc04", "ink": "#14284e", "codePrefix": "YEAR", "seraLine": "12 months of the $299 membership, free" }
   ],
   "zones": [
     { "gift": "duct50", "pct": 20,   "big": "$50 OFF", "small": "DUCT CLEANING" },

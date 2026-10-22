@@ -8,10 +8,12 @@ import { parseSearch } from '../db.ts';
 import { takeTurn, claimGift, status, type Cfg } from '../dial.ts';
 import { liveConfig, forgetConfig, publicConfig } from '../config.ts';
 import { memoryAuth } from './auth.ts';
+import { mayCall } from './roles.ts';
+import { makeCode } from '../rules.js';
 import { readSession, signSession, sessionCookie, cookieValue } from './session.ts';
 import {
   signIn, publishConfig, setDialEnabled, rollbackTo, codeAction, addAdmin, removeAdmin, changePassword, currentConfig,
-  statsRange, cleanConfig, freeYears, RESENDS_PER_DAY
+  statsRange, cleanConfig, freeYears, setAdminRole, RESENDS_PER_DAY
 } from './service.ts';
 
 const builtIn = JSON.parse(readFileSync(new URL('../../../data/dial.json', import.meta.url), 'utf8'));
@@ -116,13 +118,14 @@ test('publish: unknown fields are dropped and a new gift gets a slice', async ()
   const next = edited(cur.config, (c: any) => {
     c.evil = '<script>';
     c.gifts.find((g: any) => g.id === 'svc20').weight = 35;
-    c.gifts.push({ id: 'tune40', short: '$40 OFF TUNE-UP', name: '$40 off a tune-up', sub: 'Furnace or AC', weight: 10, value: 40, fill: '#14284e', ink: '#f9f7f8', big: '$40 OFF', small: 'TUNE-UP', extra: 1 });
+    c.gifts.push({ id: 'tune40', short: '$40 OFF TUNE-UP', name: '$40 off a tune-up', sub: 'Furnace or AC', weight: 10, value: 40, fill: '#14284e', ink: '#f9f7f8', big: '$40 OFF', small: 'TUNE-UP', codePrefix: 'tune40', seraLine: 'Comfort Dial $40 tune-up', extra: 1 });
   });
   const res = await publishConfig(db, builtIn, { config: next, baseVersion: 0, by: JASON.email, ip: null }, OCT);
   assert.ok(res.ok);
   if (!res.ok) return;
   assert.equal((res.config as any).evil, undefined);
   assert.equal((res.config.gifts.at(-1) as any).extra, undefined);
+  assert.equal(res.config.gifts.at(-1)!.codePrefix, 'TUNE40', 'prefixes are stored in capitals');
   assert.deepEqual(res.config.zones.at(-1), { gift: 'tune40', pct: 10, big: '$40 OFF', small: 'TUNE-UP' });
   assert.deepEqual(Object.keys(cleanConfig(builtIn)).sort(), Object.keys(builtIn).filter((k) => k !== '_note').sort(), 'the cleaner knows every field');
 });
@@ -161,6 +164,9 @@ test('turns record the config version that picked them; a switched-off free year
   const st = await status(db, live, OCT);
   assert.deepEqual([st.membershipOpen, st.membershipsLeft, st.nextUnlock], [false, 0, null]);
   assert.ok(!publicConfig(live).gifts.some((g) => g.id === 'mem'), 'the popup never sees a gift that is off');
+  const pub = publicConfig(live).gifts[0] as Record<string, unknown>;
+  assert.equal(pub.expiresDays, live.expiresDays, 'each gift says how long its code lasts');
+  assert.ok(!('seraLine' in pub) && !('codePrefix' in pub), 'internal fields stay home');
 });
 
 test('rollback publishes an old version again and keeps later gifts, switched off', async () => {
@@ -168,7 +174,7 @@ test('rollback publishes an old version again and keeps later gifts, switched of
   const cur = await currentConfig(db, builtIn);
   const withTune = edited(cur.config, (c) => {
     c.gifts.find((g) => g.id === 'svc20')!.weight = 35;
-    c.gifts.push({ id: 'tune40', short: '$40 OFF TUNE-UP', name: '$40 off a tune-up', sub: 'Furnace or AC', weight: 10, value: 40, fill: '#14284e', ink: '#f9f7f8', big: '$40 OFF', small: 'TUNE-UP' });
+    c.gifts.push({ id: 'tune40', short: '$40 OFF TUNE-UP', name: '$40 off a tune-up', sub: 'Furnace or AC', weight: 10, value: 40, fill: '#14284e', ink: '#f9f7f8', big: '$40 OFF', small: 'TUNE-UP', codePrefix: 'TUNE40', seraLine: 'Comfort Dial $40 tune-up' });
   });
   assert.ok((await publishConfig(db, builtIn, { config: withTune, baseVersion: 0, by: JASON.email, ip: null }, OCT)).ok);
   const back = await rollbackTo(db, builtIn, { version: 0, baseVersion: 1, by: JASON.email, ip: null }, OCT);
@@ -179,6 +185,17 @@ test('rollback publishes an old version again and keeps later gifts, switched of
   assert.equal(back.config.gifts.find((g) => g.id === 'tune40')!.active, false);
   assert.ok(!back.config.zones.some((z) => z.gift === 'tune40'));
   assert.equal(db.configs.find((c) => c.version === 2)!.note, 'Restored version 0');
+});
+
+test('rollback to a version from before code prefixes keeps today\'s prefixes and Sera lines', async () => {
+  const { db } = setup();
+  const old = JSON.parse(JSON.stringify(builtIn));
+  for (const g of old.gifts) { delete g.codePrefix; delete g.seraLine; }
+  db.configs.push({ version: 1, config: old, note: 'from before prefixes', created_by: 'test', created_at: OCT.toISOString() });
+  assert.ok((await publishConfig(db, builtIn, { config: builtIn, baseVersion: 1, by: JASON.email, ip: null }, OCT)).ok, 'prefixes can be added to promos published without them');
+  const back = await rollbackTo(db, builtIn, { version: 1, baseVersion: 2, by: JASON.email, ip: null }, OCT);
+  assert.ok(back.ok);
+  if (back.ok) assert.deepEqual(back.config.gifts.map((g) => [g.codePrefix, !!g.seraLine]), builtIn.gifts.map((g: any) => [g.codePrefix, true]));
 });
 
 /* ---------------- codes ---------------- */
@@ -230,8 +247,14 @@ test('code actions: an expired code can be extended back to life; resends are ca
 });
 
 test('code lookup understands codes, phone fragments and names; filters by status and gift', async () => {
+  const c = makeCode('SVC20'), off = c.slice(0, -1) + (c.at(-1) === 'A' ? 'C' : 'A');
+  assert.deepEqual(parseSearch(c.toLowerCase()), { code: c });
+  assert.deepEqual(parseSearch(c.replace('-', ' ')), { code: c });
+  assert.deepEqual(parseSearch(off), { text: off, typo: off }, 'a failed check is still searched as text, and flagged');
+  assert.deepEqual(parseSearch(c.slice(6)), { text: c.slice(6) }, 'the random part alone finds it inside the code');
   assert.deepEqual(parseSearch('arr-7k3p'), { code: 'ARR-7K3P' });
   assert.deepEqual(parseSearch('7K3P'), { code: 'ARR-7K3P' });
+  assert.deepEqual(parseSearch('Ravinia'), { text: 'Ravinia' });
   assert.deepEqual(parseSearch('(708) 555-02'), { phone: '70855502' });
   assert.deepEqual(parseSearch('+1 708 555 0201'), { phone: '7085550201' });
   assert.deepEqual(parseSearch('Park'), { text: 'Park' });
@@ -255,6 +278,35 @@ test('code lookup understands codes, phone fragments and names; filters by statu
   assert.deepEqual([page.rows.length, page.total], [1, 2]);
 });
 
+test('code actions: a mistyped code says a character is off; a CSR redeems and texts again, nothing else', async () => {
+  const { db } = setup();
+  const cfg = await liveConfig(db, builtIn);
+  const e = await win(db, cfg, '7085550203');
+  const last = e.code.at(-1)!, other = last === 'A' ? 'C' : 'A';
+  const typo = await codeAction(db, { code: e.code.slice(0, -1) + other, action: 'redeem', by: JASON.email, ip: null }, OCT);
+  assert.ok(!typo.ok && typo.status === 400 && /One character in .* is off/.test(typo.error));
+  const notCode = await codeAction(db, { code: 'hello', action: 'redeem', by: JASON.email, ip: null }, OCT);
+  assert.ok(!notCode.ok && /Codes look like SVC20-7K3PK/.test(notCode.error));
+  assert.ok((await codeAction(db, { code: e.code.replace('-', ' ').toLowerCase(), action: 'resend', by: 'dana@arrhvac.com', role: 'csr', ip: null }, OCT)).ok, 'typed loosely, still found');
+
+  const csr = { by: 'dana@arrhvac.com', role: 'csr' as const, ip: null };
+  for (const action of ['void', 'restore', 'extend']) {
+    const r = await codeAction(db, { code: e.code, action, note: 'x', days: 7, ...csr }, OCT);
+    assert.ok(!r.ok && r.status === 403, `a CSR can't ${action}`);
+  }
+  const after = new Date(new Date(e.expires_at).getTime() + 864e5);
+  const late = await codeAction(db, { code: e.code, action: 'redeem', ...csr }, after);
+  assert.ok(!late.ok && late.status === 409 && /Ask an admin to extend/.test(late.error), 'a CSR can\'t redeem an expired code');
+  const r = await codeAction(db, { code: e.code, action: 'redeem', note: 'Job 5120', ...csr }, OCT);
+  assert.ok(r.ok && r.entry.redeemed_note === 'Redeemed in the admin by dana@arrhvac.com: Job 5120');
+});
+
+test('roles: a CSR may make only the Codes tab\'s calls', () => {
+  for (const [m, p] of [['GET', 'codes'], ['GET', 'code'], ['POST', 'code'], ['GET', 'config'], ['POST', 'logout'], ['POST', 'password']]) assert.ok(mayCall('csr', m, p), `${m} ${p}`);
+  for (const [m, p] of [['POST', 'config'], ['POST', 'state'], ['POST', 'rollback'], ['GET', 'team'], ['POST', 'team'], ['PATCH', 'team'], ['GET', 'stats'], ['GET', 'versions'], ['GET', 'membership']]) assert.ok(!mayCall('csr', m, p), `${m} ${p}`);
+  assert.ok(mayCall('admin', 'POST', 'config'));
+});
+
 /* ---------------- team ---------------- */
 
 test('team: add with a temporary password, add someone who already has an account, remove, change your password', async () => {
@@ -276,6 +328,17 @@ test('team: add with a temporary password, add someone who already has an accoun
   assert.ok((await removeAdmin(db, { email: 'csr@arrhvac.com', by: JASON.email, ip: null }, OCT)).ok);
   const gone = await signIn(db, auth, { email: 'csr@arrhvac.com', password: 'temporary-pass-1', ip: null }, OCT);
   assert.ok(!gone.ok, 'removed from the list means no way in, even with the right password');
+
+  const asCsr = await addAdmin(db, auth, { email: 'dana@arrhvac.com', name: 'Dana', password: 'temporary-pass-2', role: 'csr', by: JASON.email, ip: null }, OCT);
+  assert.ok(asCsr.ok);
+  assert.equal((await db.admin('dana@arrhvac.com'))!.role, 'csr');
+  const badRole = await addAdmin(db, auth, { email: 'x@arrhvac.com', name: 'X', password: 'temporary-pass-3', role: 'owner', by: JASON.email, ip: null }, OCT);
+  assert.ok(!badRole.ok && badRole.status === 400);
+  assert.ok((await setAdminRole(db, { email: 'dana@arrhvac.com', role: 'admin', by: JASON.email, ip: null }, OCT)).ok);
+  assert.equal((await db.admin('dana@arrhvac.com'))!.role, 'admin');
+  const own = await setAdminRole(db, { email: JASON.email, role: 'csr', by: JASON.email, ip: null }, OCT);
+  assert.ok(!own.ok && own.status === 400, 'nobody demotes themselves');
+  assert.deepEqual(db.auditRows.filter((a) => a.action === 'role').map((a) => a.detail), [{ from: 'csr', to: 'admin' }]);
 
   const session = { email: JASON.email, name: 'Jason', uid: JASON.email, exp: 0 };
   const wrong = await changePassword(db, auth, { session, current: 'nope', next: 'a-brand-new-password', ip: null }, OCT);

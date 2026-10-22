@@ -1,6 +1,7 @@
 /* Promos & odds: each gift's words, value, colours and odds, with the dial drawn live beside them exactly as the
- * popup draws it (src/widget/face.js). The list is drawn once and patched as you type, so inputs keep focus; the
- * preview, totals, odds table, dial order and checks redraw on every change. */
+ * popup draws it (src/widget/face.js), plus how its codes work: prefix, Sera line, expiry. The list is drawn once and
+ * patched as you type, so inputs keep focus; the preview, totals, odds table, dial order and checks redraw on every
+ * change. */
 import { validateConfig, oddsInPlay, activeGifts } from '../lib/rules.js';
 import { svgInner, drawFace, fToAng, hubSize, VIEWBOX } from '../widget/face.js';
 import { S, edit, on } from './store.js';
@@ -10,6 +11,9 @@ const open = new Set();
 let root = null, off = null;
 const pctOf = (n) => `${Number((+n || 0).toFixed(2))}%`;
 const isNew = (g) => !S.live.config.gifts.some((x) => x.id === g.id);
+/* A published prefix is printed on codes already out there, so it can't change (validateConfig refuses it too). */
+const prefixLocked = (g) => !!S.live.config.gifts.find((x) => x.id === g.id)?.codePrefix;
+const typedPrefix = new WeakSet();   // gifts whose prefix the admin typed: the name no longer suggests one
 const monthName = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }); };
 
 function slug(name, gifts, self) {
@@ -17,6 +21,18 @@ function slug(name, gifts, self) {
   let id = base.length < 2 ? `${base}_x` : base, n = 2;
   while (gifts.some((g) => g !== self && g.id === id)) id = `${base.slice(0, 20)}_${n++}`;
   return id;
+}
+
+/* A first guess at a new promo's code prefix: its first real word and dollar amount, like TUNE40 from "$40 off a
+ * tune-up". The admin can type over it. */
+const FILLER = new Set(['a', 'an', 'and', 'any', 'for', 'free', 'new', 'of', 'off', 'on', 'our', 'the', 'value', 'your']);
+function autoPrefix(name, gifts, self) {
+  const amount = (String(name).match(/\d+/) || [''])[0].slice(0, 3);
+  const word = (String(name).toLowerCase().match(/[a-z]+/g) || []).find((w) => !FILLER.has(w)) || 'promo';
+  const base = (word.slice(0, 6 - amount.length) + amount).toUpperCase().padEnd(2, 'X');
+  let p = base;
+  for (let n = 2; gifts.some((g) => g !== self && g.codePrefix === p); n++) p = base.slice(0, 6 - String(n).length) + n;
+  return p;
 }
 
 export function render(main) {
@@ -81,6 +97,11 @@ function drawList() {
           <label class="f"><span>Short name</span><input type="text" data-f="short" maxlength="22" value="${esc(g.short)}"><small>In the dial's centre as the needle passes. 22 characters.</small></label>
         </div>
         <label class="f"><span>Description</span><input type="text" data-f="sub" maxlength="140" value="${esc(g.sub)}"><small>One line under the name, and in the CSR's notes on Monday.</small></label>
+        <div class="row cols-2">
+          <label class="f"><span>Code prefix</span><input type="text" data-f="codePrefix" maxlength="6" value="${esc(g.codePrefix || '')}" spellcheck="false" autocomplete="off" style="text-transform:uppercase" ${prefixLocked(g) ? 'readonly' : ''}><small data-k="prefixHelp">${prefixHelp(g)}</small></label>
+          <label class="f"><span>Codes expire after</span><div class="unit"><input type="number" min="1" max="365" step="1" data-f="expiresDays" value="${esc(g.expiresDays ?? '')}" placeholder="${esc(S.draft.expiresDays)}"><b>days</b></div><small>Blank: the default in Settings, ${esc(S.draft.expiresDays)} days.</small></label>
+        </div>
+        <label class="f"><span>Sera line</span><input type="text" data-f="seraLine" maxlength="80" value="${esc(g.seraLine || '')}" placeholder="Comfort Dial $20"><small>The discount the CSR applies in Sera. Shown on the Monday item and on the code in Codes.</small></label>
         <div class="row cols-3">
           <label class="f"><span>Value</span><div class="unit"><input type="number" min="0" max="10000" step="1" data-f="value" value="${esc(g.value)}"><b>$</b></div></label>
           <label class="f"><span>Dial label, big</span><input type="text" data-f="big" maxlength="12" value="${esc(g.big)}"><small>Like $50 OFF</small></label>
@@ -100,6 +121,11 @@ function drawList() {
   }).join('');
 }
 
+function prefixHelp(g) {
+  const ex = `${g.codePrefix || 'SVC20'}-7K3PK`;
+  return prefixLocked(g) ? `Codes look like ${esc(ex)}. Fixed: codes already carry it.` : `Codes will look like ${esc(ex)}. Fixed once published.`;
+}
+
 function giftAt(i) { return S.draft.gifts[i]; }
 
 function onInput(e) {
@@ -109,6 +135,13 @@ function onInput(e) {
   let v = t.value;
   if (f === 'weight') v = Math.round((parseFloat(v) || 0) * 100) / 100;
   if (f === 'value') v = Math.max(0, Math.round(parseFloat(v) || 0));
+  if (f === 'codePrefix') {
+    if (prefixLocked(giftAt(i))) return;
+    v = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    if (t.value !== v) t.value = v;
+    typedPrefix.add(giftAt(i));
+  }
+  if (f === 'expiresDays') v = v === '' ? null : Math.round(parseFloat(v));
   if ((f === 'fill' || f === 'ink')) {
     if (!/^#[0-9a-f]{6}$/i.test(v)) return;   // wait until the hex is whole
     $$(`[data-f="${f}"]`, card).forEach((x) => { if (x !== t) x.value = v; });
@@ -120,10 +153,17 @@ function onInput(e) {
       const was = g.id;
       g.id = slug(v, d.gifts, g);
       d.zones.forEach((z) => { if (z.gift === was) z.gift = g.id; });
+      if (!typedPrefix.has(g)) g.codePrefix = autoPrefix(v, d.gifts, g);
     }
-    g[f] = v;
+    if (f === 'expiresDays' && (v == null || Number.isNaN(v))) delete g.expiresDays;
+    else g[f] = v;
   }, { quiet: true });
-  if (f === 'name') { $('[data-k="title"]', card).textContent = v || 'New promo'; const code = card.querySelector('code'); if (code) code.textContent = giftAt(i).id; }
+  if (f === 'name') {
+    $('[data-k="title"]', card).textContent = v || 'New promo';
+    const code = card.querySelector('code'); if (code) code.textContent = giftAt(i).id;
+    const pre = $('[data-f="codePrefix"]', card); if (pre && pre.value !== giftAt(i).codePrefix) pre.value = giftAt(i).codePrefix || '';
+  }
+  if (f === 'name' || f === 'codePrefix') $('[data-k="prefixHelp"]', card).innerHTML = prefixHelp(giftAt(i));
 }
 
 function onChange(e) {
@@ -158,8 +198,9 @@ function onClick(e) {
 
 function addGift() {
   edit((d) => {
-    const g = { id: '', name: 'New promo', short: 'NEW PROMO', sub: 'Describe what the winner gets', weight: 5, value: 25, fill: '#14284e', ink: '#f9f7f8', active: true, big: '$25 OFF', small: 'NEW PROMO' };
+    const g = { id: '', name: 'New promo', short: 'NEW PROMO', sub: 'Describe what the winner gets', weight: 5, value: 25, fill: '#14284e', ink: '#f9f7f8', active: true, big: '$25 OFF', small: 'NEW PROMO', codePrefix: '', seraLine: '' };
     g.id = slug(g.name, d.gifts, g);
+    g.codePrefix = autoPrefix(g.name, d.gifts, g);
     d.gifts.push(g);
     open.add(d.gifts.length - 1);
   });

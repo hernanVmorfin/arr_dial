@@ -14,7 +14,7 @@ A Webflow Cloud app (Astro on Cloudflare Workers) mounted at `alwaysreadyrepair.
 | `/dial/api/redeemed` | Monday webhook: Code status set to Redeemed. |
 | `/dial/api/health` | Build and integration check (`?deep=1` also reads Supabase). |
 | `/dial/rules` | Official rules, generated from the live config. |
-| `/dial/admin` | The admin: promos and odds, settings, codes, results, history, team. Email + password sign-in. |
+| `/dial/admin` | The admin: promos and odds, settings, codes, results, history, team. Email + password sign-in. A CSR login gets Codes only. |
 | `/dial/api/admin/*` | The admin's API (signed-in admins only). |
 | `/dial/` | A page that opens the dial (QA, staging, direct link). |
 
@@ -27,7 +27,10 @@ A Webflow Cloud app (Astro on Cloudflare Workers) mounted at `alwaysreadyrepair.
 2. **Turn**: `/api/turn` picks a gift by the published odds and holds it for 10 minutes. The free year ($299
    membership, one per month) is held for that turn alone, so the countdown is real.
 3. **Claim**: a mobile number. A free-year winner also gives a home address, which must match a county record.
-   One gift per phone (database constraint); one per household is checked by the CSR at booking.
+   One gift per phone (database constraint); one per household is checked by the CSR at booking. The code names its
+   promo and carries a check character: `SVC20-7K3PK` is the promo's prefix, four random characters (no look-alikes
+   such as 0/O or 1/I) and a check that catches any one wrong character or two swapped ones. It lasts the promo's
+   number of days.
 4. **After the win** (in the background): the code is texted at once (Podium). Then the dial looks up what it can
    (below), and the Monday item and Klaviyo's "Comfort Dial Won" event go out with it.
 5. **Redeemed**: the CSR sets Code status to Redeemed on the Monday item; the webhook marks the code used and tells
@@ -60,12 +63,12 @@ this app never stores one.
 
 | Tab | What it does |
 |---|---|
-| Promos & odds | Each promo's name, value, dial label, colours and odds, with the dial drawn live as visitors will see it. Add a promo, switch one off, reorder the slices. Published promos can be switched off, never deleted, so their codes keep working. |
+| Promos & odds | Each promo's name, value, dial label, colours and odds, with the dial drawn live as visitors will see it; its code prefix (fixed once published), the Sera line the CSR applies, and how long its codes last. Add a promo, switch one off, reorder the slices. Published promos can be switched off, never deleted, so their codes keep working. |
 | Settings | The popup's share of visitors (100%, or less for a split test), delay, snooze, side tab, pages where it never opens; which months have a free year, and who won each; hold time, code expiry, daily limits; phone, booking link, service-area ZIPs; rules draft/final. |
-| Codes | Find a code by code, phone, name or street. Mark redeemed, void (with a reason), restore, extend, text it again. Export CSV. Every action is logged with who did it. |
+| Codes | Find a code by code, phone, name or street (a mistyped character is caught). Mark redeemed, void (with a reason), restore, extend, text it again. Export CSV. Every action is logged with who did it. A CSR can only find, mark redeemed and text again. |
 | Results | Turns, people, codes claimed, redemptions, value, opt-ins; by day; each promo's real share of turns against its odds; sources. |
 | History | Every published version, what changed and who published it. Restore any of them. |
-| Team | Add an admin (with a temporary password), remove one, see last sign-ins. |
+| Team | Add someone as an admin or a CSR (with a temporary password), change their role, remove them, see last sign-ins. |
 
 **Pause the dial** (above the tabs) stops it at once: no auto-open, no new turns, the button shows a call-us message.
 Edits in Promos and Settings are a draft until **Review & publish**; the site picks up a publish within 15 seconds.
@@ -82,8 +85,8 @@ npm run dev                 # http://localhost:4321/dial/
 With no Supabase keys, `astro dev` keeps turns, wins and published configs in memory, so the whole flow can be
 clicked through. Runtime keys for local testing go in `.dev.vars` (same names as `.env.example`). The sample home
 `14532 S Ravinia Ave, 60462` passes the county-record check locally. The local admin is at
-http://localhost:4321/dial/admin, signed in with the local-only account in `DEV_ADMIN` (`src/lib/runtime.ts`); it
-doesn't exist in a production build. A dev-server restart forgets everything, including the session.
+http://localhost:4321/dial/admin, signed in with the local-only account in `DEV_ADMIN` (`src/lib/runtime.ts`), or
+`DEV_CSR` to see the Codes-only view; neither exists in a production build. A dev-server restart forgets everything, including the session.
 
 ```bash
 npm test                    # rules, service logic and admin (in-memory store), integration payloads

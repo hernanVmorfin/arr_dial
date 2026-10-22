@@ -1,8 +1,11 @@
 /* Codes: find a winner by code, phone, name or street; open one to redeem, void, restore, extend or text it again.
- * Every action lands on the code's history with who did it. Monday and Klaviyo follow on their own. */
+ * Every action lands on the code's history with who did it. Monday and Klaviyo follow on their own. A CSR can only
+ * redeem and text again, and doesn't get the CSV export. */
 import { S } from './store.js';
 import { homeLine, homeHints, priorLine, priorChecked, visitLine } from '../lib/profile.js';
-import { BASE, api, esc, $, dialog, toast, fmtDate, fmtWhen, fmtShortWhen, fmtPhone, fmtNum } from './ui.js';
+import { BASE, BOOT, api, esc, $, dialog, toast, fmtDate, fmtWhen, fmtShortWhen, fmtPhone, fmtNum } from './ui.js';
+
+const CSR = BOOT.me.role === 'csr';
 
 export const STATUS = { issued: 'Usable', redeemed: 'Redeemed', expired: 'Expired', void: 'Void' };
 const ACTION_WORDS = { redeem: 'Marked redeemed', void: 'Voided', restore: 'Restored', extend: 'Extended', resend: 'Texted the code again' };
@@ -18,13 +21,13 @@ export function render(main) {
   main.innerHTML = `
     <div class="head"><div>
       <p class="eyebrow">Find a winner</p><h1>Codes</h1>
-      <p class="muted">Search by code, phone number, first name or street. Open a code to redeem, void, extend or text it again.</p>
+      <p class="muted">Search by code, phone number, first name or street. Open a code to ${CSR ? 'mark it redeemed or text it again' : 'redeem, void, extend or text it again'}.</p>
     </div></div>
     <div class="filters">
-      <label class="f q"><span>Search</span><input type="search" id="cq" placeholder="ARR-7K3P, 708 555, Maria, Ravinia" value="${esc(f.q)}" autocomplete="off"></label>
+      <label class="f q"><span>Search</span><input type="search" id="cq" placeholder="SVC20-7K3PK, 708 555, Maria, Ravinia" value="${esc(f.q)}" autocomplete="off"></label>
       <label class="f"><span>Status</span><select id="cs"><option value="">Any status</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="f"><span>Promo</span><select id="cg"><option value="">Any promo</option>${gifts.map((g) => `<option value="${esc(g.id)}" ${f.gift === g.id ? 'selected' : ''}>${esc(g.name)}${g.active === false ? ' (off)' : ''}</option>`).join('')}</select></label>
-      <a class="btn quiet" id="csv" href="#" download>Export CSV</a>
+      ${CSR ? '' : '<a class="btn quiet" id="csv" href="#" download>Export CSV</a>'}
     </div>
     <div id="clist"><p class="muted">Loading…</p></div>`;
   $('#cq', main).addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => { f.q = e.target.value.trim(); f.page = 1; load(); }, 280); });
@@ -42,12 +45,17 @@ export function destroy() { root = null; }
 async function load() {
   if (!root) return;
   const mine = ++seq;
-  $('#csv', root).href = `${BASE}api/admin/codes?${query({ format: 'csv', page: '' })}`;
+  const csv = $('#csv', root);
+  if (csv) csv.href = `${BASE}api/admin/codes?${query({ format: 'csv', page: '' })}`;
   const r = await api(`codes?${query()}`);
   if (mine !== seq || !root) return;
   const box = $('#clist', root);
   if (!r.ok) { box.innerHTML = `<p class="err">${esc(r.error)}</p>`; return; }
-  if (!r.rows.length) { box.innerHTML = `<div class="tablewrap"><div class="empty">${f.q || f.status || f.gift ? 'No codes match.' : 'No codes yet. They show up here as people win.'}</div></div>`; return; }
+  if (!r.rows.length) {
+    const none = r.typo ? `No code ${esc(r.typo)}. One character is off: read the code back with the customer.` : f.q || f.status || f.gift ? 'No codes match.' : 'No codes yet. They show up here as people win.';
+    box.innerHTML = `<div class="tablewrap"><div class="empty">${none}</div></div>`;
+    return;
+  }
   const from = (r.page - 1) * r.pageSize + 1, to = from + r.rows.length - 1, last = Math.ceil(r.total / r.pageSize);
   box.innerHTML = `
     <div class="tablewrap"><table>
@@ -74,6 +82,7 @@ function facts(e) {
   const utm = e.utm ? Object.entries(e.utm).map(([k, v]) => `${k.replace(/^utm_/, '')}: ${v}`).join(' · ') : '';
   const rows = [
     ['Promo', `<span style="display:inline-flex;gap:8px;align-items:center"><i class="swatch" style="background:${esc(e.giftFill)}"></i>${esc(e.giftName)} · $${esc(e.giftValue)}</span>`],
+    ['Apply in Sera', e.giftSera ? `<b>${esc(e.giftSera)}</b>` : '<span class="muted">No Sera line set for this promo</span>'],
     ['Status', tag(e.status)],
     ['Phone', `<a href="tel:${esc(e.phone)}">${esc(fmtPhone(e.phone))}</a>`],
     ['Name', esc(e.first_name || '–')],
@@ -115,8 +124,9 @@ function known(e) {
 
 function actions(e) {
   const b = (act, label, kind = 'quiet') => `<button type="button" class="btn ${kind} sm" data-do="${act}">${label}</button>`;
-  if (e.status === 'void') return b('restore', 'Restore code');
+  if (e.status === 'void') return CSR ? '<span class="muted small">Void: don\'t honor it. Ask an admin if that\'s wrong.</span>' : b('restore', 'Restore code');
   if (e.status === 'redeemed') return '<span class="muted small">Used. Nothing left to do.</span>';
+  if (CSR) return e.status === 'issued' ? [b('redeem', 'Mark redeemed', ''), b('resend', 'Text it again')].join('') : '<span class="muted small">Expired. Ask an admin to extend it.</span>';
   return [b('redeem', 'Mark redeemed', ''), b('extend', 'Extend'), e.status === 'issued' ? b('resend', 'Text it again') : '', b('void', 'Void', 'quiet')].join('');
 }
 

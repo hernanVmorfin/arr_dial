@@ -1,13 +1,14 @@
 ---
 /* <base>admin — the Comfort Dial admin. The middleware has already checked the session; everything on the page is
  * drawn by src/admin/app.js from the /api/admin/* calls. Tabs: Promos & odds, Settings, Codes, Results, History,
- * Team. */
+ * Team; a CSR gets Codes only. */
 import '../../admin/admin.css';
 
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 const admin = Astro.locals.admin!;
 const LOGO = 'https://cdn.prod.website-files.com/67706112234589f93fe7a263/6770706cd327b7c71e895d05_Main%20Logo.svg';
-const boot = { base, me: { email: admin.email, name: admin.name } };
+const csr = admin.role === 'csr';
+const boot = { base, me: { email: admin.email, name: admin.name, role: admin.role } };
 ---
 <!doctype html>
 <html lang="en">
@@ -24,7 +25,7 @@ const boot = { base, me: { email: admin.email, name: admin.name } };
     <header class="top">
       <div class="top-in">
         <img src={LOGO} alt="Always Ready Repair" />
-        <div class="title"><b>Comfort Dial</b> · Admin</div>
+        <div class="title"><b>Comfort Dial</b> · {csr ? 'Codes' : 'Admin'}</div>
         <div class="grow"></div>
         <a class="btn ghost sm" href={`${base}rules`} target="_blank" rel="noopener">Rules page</a>
         <a class="btn ghost sm" href={`${base}?dial=1`} target="_blank" rel="noopener">Open the dial</a>
@@ -42,12 +43,14 @@ const boot = { base, me: { email: admin.email, name: admin.name } };
     </header>
     <div class="state" id="state"></div>
     <nav class="tabs" id="tabs" aria-label="Sections">
-      <a href="#promos" data-tab="promos">Promos &amp; odds</a>
-      <a href="#settings" data-tab="settings">Settings</a>
-      <a href="#codes" data-tab="codes">Codes</a>
-      <a href="#results" data-tab="results">Results</a>
-      <a href="#history" data-tab="history">History</a>
-      <a href="#team" data-tab="team">Team</a>
+      {csr ? <a href="#codes" data-tab="codes">Codes</a> : <>
+        <a href="#promos" data-tab="promos">Promos &amp; odds</a>
+        <a href="#settings" data-tab="settings">Settings</a>
+        <a href="#codes" data-tab="codes">Codes</a>
+        <a href="#results" data-tab="results">Results</a>
+        <a href="#history" data-tab="history">History</a>
+        <a href="#team" data-tab="team">Team</a>
+      </>}
     </nav>
     <main id="main" aria-live="polite"><p class="muted">Loading…</p></main>
     <div class="draftbar" id="draftbar" hidden></div>

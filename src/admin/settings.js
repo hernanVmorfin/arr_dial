@@ -23,7 +23,7 @@ const SECTIONS = [
   ['Free-year schedule', 'One free year of membership in each ticked month, Chicago time. The line under the dial and the official rules follow what you publish.', schedule],
   ['Holds, codes and limits', 'Shown to visitors and printed in the official rules.', [
     ['holdMinutes', 'Hold a won gift for', 'int', 'The countdown on the claim screen.', 'min'],
-    ['expiresDays', 'Codes expire after', 'int', 'Counted from the claim. Reminder texts follow this.', 'days'],
+    ['expiresDays', 'Codes expire after', 'int', 'Counted from the claim. The default: a promo can set its own in Promos & odds. Reminder texts follow it.', 'days'],
     ['limits.turnsPerDevicePerDay', 'Turns per device per day', 'int', 'Per browser, rolling 24 hours.', 'turns'],
     ['limits.turnsPerIpPerDay', 'Turns per connection per day', 'int', 'Per IP address. Keep it well above the device limit: households and offices share one.', 'turns'],
     ['limits.claimsPerIpPerDay', 'Claims per connection per day', 'int', 'Codes issued per IP address.', 'codes']
