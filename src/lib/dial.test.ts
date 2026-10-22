@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { takeTurn, claimGift, addDetails, status, type Cfg } from './dial.ts';
 import { memoryDb } from './db-memory.ts';
 import { addressKey } from './address.ts';
+import { isCode } from './rules.js';
 
 const cfg: Cfg = JSON.parse(readFileSync(new URL('../../data/dial.json', import.meta.url), 'utf8'));
 const OCT = new Date('2026-10-16T15:00:00Z');
@@ -26,13 +27,31 @@ test('a turn picks a gift, holds it, and a claim with a phone issues a code', as
   const c = await claimGift(db, cfg, claimIn(t.turn.id, '(708) 555-0142', { reminders: true, utm: { utm_source: 'fb', evil: 'x' } }), minutes(OCT, 2));
   assert.ok(c.ok && !c.duplicate);
   if (!c.ok || c.duplicate) return;
-  assert.match(c.entry.code, /^ARR-[A-Z0-9]{4}$/);
+  assert.match(c.entry.code, /^SVC20-[A-Z0-9]{5}$/, 'the promo\'s prefix starts the code');
+  assert.ok(isCode(c.entry.code));
   assert.equal(c.entry.phone, '7085550142');
   assert.equal(c.entry.sms_marketing, true);
   assert.deepEqual(c.entry.utm, { utm_source: 'fb' });
   assert.equal(c.fresh, true);
   assert.equal(new Date(c.entry.expires_at).getTime(), new Date(minutes(OCT, 2).getTime() + 30 * 864e5).getTime());
   assert.equal(db.turns[0].entry_id, c.entry.id);
+});
+
+test('each promo\'s codes start with its prefix and last its own number of days', async () => {
+  const db = memoryDb({ properties: props });
+  const custom: Cfg = { ...cfg, gifts: cfg.gifts.map((g) => (g.id === 'mem' ? { ...g, expiresDays: 60 } : g)) };
+  const t = await takeTurn(db, custom, ipIn(), OCT, memRand);
+  assert.ok(t.ok && t.gift.id === 'mem');
+  if (!t.ok) return;
+  const c = await claimGift(db, custom, claimIn(t.turn.id, '7085550170', HOME), OCT);
+  assert.ok(c.ok && !c.duplicate);
+  if (!c.ok || c.duplicate) return;
+  assert.match(c.entry.code, /^YEAR-/);
+  assert.equal(new Date(c.entry.expires_at).getTime(), OCT.getTime() + 60 * 864e5, 'the free year\'s own 60 days');
+  const t2 = await takeTurn(db, custom, ipIn(), OCT, svcRand);
+  const c2 = t2.ok ? await claimGift(db, custom, claimIn(t2.turn.id, '7085550171'), OCT) : null;
+  assert.ok(c2 && c2.ok && !c2.duplicate);
+  if (c2 && c2.ok && !c2.duplicate) assert.equal(new Date(c2.entry.expires_at).getTime(), OCT.getTime() + 30 * 864e5, 'the default 30 days');
 });
 
 test('claiming the same turn twice returns the same code and is not fresh', async () => {

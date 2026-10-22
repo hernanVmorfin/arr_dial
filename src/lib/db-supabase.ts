@@ -152,7 +152,8 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
     async admin(email) { return one<Admin>(await call('GET', T.admins, { select: '*', email: `eq.${email.toLowerCase()}` }), 'admin'); },
     async admins() { return rows<Admin>(await call('GET', T.admins, { select: '*', order: 'name.asc' }), 'admins'); },
     async addAdmin(a) {
-      const res = await call('POST', T.admins, {}, { body: a, prefer: 'return=minimal' });
+      const { role, ...rest } = a;   // an admin leaves role to the column default, so adding one works before the roles migration
+      const res = await call('POST', T.admins, {}, { body: role === 'csr' ? a : rest, prefer: 'return=minimal' });
       if (res.ok) return 'ok';
       if (res.status === 409) return 'exists';
       throw new Error(`supabase add admin ${res.status} ${(await res.text()).slice(0, 200)}`);
@@ -160,6 +161,10 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
     async removeAdmin(email) {
       const res = await call('DELETE', T.admins, { email: `eq.${email}` });
       if (!res.ok) throw new Error(`supabase remove admin ${res.status}`);
+    },
+    async setAdminRole(email, role) {
+      const res = await call('PATCH', T.admins, { email: `eq.${email}` }, { body: { role }, prefer: 'return=minimal' });
+      if (!res.ok) throw new Error(`supabase set admin role ${res.status} ${(await res.text()).slice(0, 200)}`);
     },
 
     async audit(row: AuditRow) {

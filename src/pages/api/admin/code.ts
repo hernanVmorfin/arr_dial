@@ -1,17 +1,19 @@
 import type { APIRoute } from 'astro';
 import { afterResponse, configFor, dbFor, envOf } from '../../../lib/runtime.ts';
-import { codeAction } from '../../../lib/admin/service.ts';
+import { codeAction, codeProblem } from '../../../lib/admin/service.ts';
 import { giftById } from '../../../lib/dial.ts';
-import { isCode } from '../../../lib/rules.js';
+import { readCode } from '../../../lib/rules.js';
 import { announceCodeChange } from '../../../lib/fanout.ts';
 import { podiumConfigured, sendCodeText } from '../../../lib/podium.ts';
 import { adminJson, readBody } from '../../../lib/admin/http.ts';
 import { clientIp } from '../../../lib/http.ts';
 import { codeView as view } from '../../../lib/admin/view.ts';
 
-/* GET  /api/admin/code?code=ARR-7K3P → { entry, history }: one code with everything done to it.
+/* GET  /api/admin/code?code=SVC20-7K3PK → { entry, history }: one code with everything done to it. A code whose
+ *      check character fails gets 400 saying a character is off.
  * POST /api/admin/code { code, action, note?, days? } → { ok, entry, history }
  *      action: redeem · void (note = the reason) · restore · extend (days) · resend (texts the code again).
+ *      A CSR may redeem and resend only.
  *      Monday and Klaviyo follow after the response; a resend waits for Podium so you see whether it went. */
 async function load(db: NonNullable<ReturnType<typeof dbFor>>, code: string) {
   const [entry, history, cfg] = await Promise.all([db.entryByCode(code), db.auditFor(code, 50), configFor(db)]);
@@ -19,8 +21,9 @@ async function load(db: NonNullable<ReturnType<typeof dbFor>>, code: string) {
 }
 
 export const GET: APIRoute = async ({ locals, url }) => {
-  const code = (url.searchParams.get('code') || '').trim().toUpperCase();
-  if (!isCode(code)) return adminJson({ error: 'Codes look like ARR-7K3P.' }, 400);
+  const code = readCode(url.searchParams.get('code'));
+  const problem = codeProblem(code);
+  if (problem || !code) return adminJson({ error: problem }, 400);
   try {
     const r = await load(dbFor(envOf(locals))!, code);
     return r ? adminJson(r) : adminJson({ error: `No code ${code}.` }, 404);
@@ -35,7 +38,8 @@ export const POST: APIRoute = async (ctx) => {
   try {
     const cfg = await configFor(db);
     if (body.action === 'resend' && !podiumConfigured(env)) return adminJson({ error: 'Texting isn\'t set up (no Podium keys), so nothing was sent.' }, 409);
-    const res = await codeAction(db, { code: body.code, action: body.action, note: body.note, days: body.days, by: ctx.locals.admin!.email, ip: clientIp(ctx.request, () => ctx.clientAddress) });
+    const a = ctx.locals.admin!;
+    const res = await codeAction(db, { code: body.code, action: body.action, note: body.note, days: body.days, by: a.email, role: a.role, ip: clientIp(ctx.request, () => ctx.clientAddress) });
     if (!res.ok) return adminJson({ error: res.error }, res.status);
     const gift = giftById(cfg, res.entry.gift);
     if (res.action === 'resend') {

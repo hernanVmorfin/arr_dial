@@ -1,5 +1,6 @@
 /* The Comfort Dial admin, in the browser. Tabs by URL hash; the bar above them says whether the dial is live and
- * pauses it; the bar along the bottom appears while there are unpublished edits and publishes them. */
+ * pauses it; the bar along the bottom appears while there are unpublished edits and publishes them. A CSR gets the
+ * Codes tab and the live/paused pill, nothing else (the server enforces it too: lib/admin/roles.ts). */
 import { validateConfig } from '../lib/rules.js';
 import { S, on, dirty, discard, loadLive, setLive, normalize } from './store.js';
 import { diffConfigs } from './diff.js';
@@ -11,12 +12,14 @@ import * as results from './results.js';
 import * as history from './history.js';
 import * as team from './team.js';
 
-const TABS = { promos, settings, codes, results, history, team };
+const CSR = BOOT.me.role === 'csr';
+const TABS = CSR ? { codes } : { promos, settings, codes, results, history, team };
+const HOME = CSR ? 'codes' : 'promos';
 let current = null;
 
 function route() {
-  const name = (location.hash.slice(1) || 'promos').split('?')[0];
-  const tab = TABS[name] ? name : 'promos';
+  const name = (location.hash.slice(1) || HOME).split('?')[0];
+  const tab = TABS[name] ? name : HOME;
   if (current && TABS[current].destroy) TABS[current].destroy();
   current = tab;
   $$('#tabs a').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
@@ -33,9 +36,9 @@ function drawState() {
   $('#state').innerHTML = `
     <span class="pill ${live ? 'live' : 'paused'}">${live ? 'Live on the site' : 'Paused'}</span>
     <span class="small muted">Version ${L.version}${L.created_at ? ` · published ${esc(ago(L.created_at))} by ${esc(L.created_by)}` : ' · the built-in config; nothing published yet'}</span>
-    <span style="flex:1"></span>
-    <button type="button" class="btn ${live ? 'quiet' : ''} sm" id="pauseBtn">${live ? 'Pause the dial' : 'Turn the dial back on'}</button>`;
-  $('#pauseBtn').addEventListener('click', togglePause);
+    ${CSR ? '' : `<span style="flex:1"></span>
+    <button type="button" class="btn ${live ? 'quiet' : ''} sm" id="pauseBtn">${live ? 'Pause the dial' : 'Turn the dial back on'}</button>`}`;
+  $('#pauseBtn')?.addEventListener('click', togglePause);
 }
 
 async function togglePause() {

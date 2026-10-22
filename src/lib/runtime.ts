@@ -14,8 +14,9 @@ export type Db = DialDb & AdminDb;
 /* `astro dev` without Supabase keys keeps everything in memory so the whole flow can be clicked through locally.
  * import.meta.env.DEV is replaced with `false` in a production build, so this branch doesn't exist on the site.
  * The sample home lets a local free-year winner pass the county-record check; the sample admin signs in to the
- * local admin (README, "Develop"). */
+ * local admin (README, "Develop"), and the sample CSR to see the Codes-only view. */
 export const DEV_ADMIN = { email: 'admin@arrhvac.test', name: 'Local Admin', password: 'dial-admin-local' };
+export const DEV_CSR = { email: 'csr@arrhvac.test', name: 'Local CSR', password: 'dial-csr-local' };
 let devDb: Db | null = null;
 export function dbFor(env: unknown): Db | null {
   if (supabaseConfig(env)) return supabaseDb(env);
@@ -24,7 +25,10 @@ export function dbFor(env: unknown): Db | null {
       properties: { '14532 S RAVINIA AVE|60462': 'dev:14532-ravinia' },
       homes: { '14532 S RAVINIA AVE|60462': { propertyKey: 'dev:14532-ravinia', county: 'Cook', township: 'Orland', yearBuilt: 1978, sqft: 1840, stories: '2', style: '2-story frame/brick', heating: 'Hot Water Steam', centralAir: false, basement: 'Full', basementFinish: 'Unfinished' } },
       serviceZips: ['60643', '60655', '60805', '60453', '60463', '60464', '60462', '60467', '60477', '60487', '60439', '60491', '60448', '60423'].map((zip) => ({ zip, name: zip })),
-      admins: [{ email: DEV_ADMIN.email, name: DEV_ADMIN.name, created_at: new Date().toISOString(), created_by: 'dev' }]
+      admins: [
+        { email: DEV_ADMIN.email, name: DEV_ADMIN.name, created_at: new Date().toISOString(), created_by: 'dev' },
+        { email: DEV_CSR.email, name: DEV_CSR.name, role: 'csr', created_at: new Date().toISOString(), created_by: 'dev' }
+      ]
     }));
   }
   return null;
@@ -33,7 +37,7 @@ export function dbFor(env: unknown): Db | null {
 let devAuth: PasswordAuth | null = null;
 export function authFor(env: unknown): PasswordAuth | null {
   if (supabaseConfig(env)) return supabaseAuth(env);
-  if (import.meta.env.DEV) return (devAuth ||= memoryAuth({ [DEV_ADMIN.email]: DEV_ADMIN.password }));
+  if (import.meta.env.DEV) return (devAuth ||= memoryAuth({ [DEV_ADMIN.email]: DEV_ADMIN.password, [DEV_CSR.email]: DEV_CSR.password }));
   return null;
 }
 

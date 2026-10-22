@@ -498,6 +498,12 @@ function turnstileToken() {
 
 /* ---------------- status line and odds ---------------- */
 function renderScarcity(st) { $('scar').textContent = scarcityLine(st); }
+/* Each gift's code can last its own number of days (the admin sets it per promo). */
+const daysFor = (g) => g.expiresDays || DIAL.expiresDays;
+function expiryLine() {
+  const d = [...new Set(DIAL.gifts.map(daysFor))].sort((a, b) => a - b);
+  return d.length > 1 ? `${d[0]} to ${d[d.length - 1]} days, depending on the gift,` : `${d[0]} days`;
+}
 function renderOdds() {
   if (!root) return;
   const pool = DIAL.gifts.filter((g) => g.id !== MEM || memOpen), tot = pool.reduce((s, g) => s + g.weight, 0);
@@ -505,7 +511,7 @@ function renderOdds() {
     const on = pool.includes(g), p = on ? g.weight / tot * 100 : 0;
     return `<div><span class="${on ? '' : 'off'}"><i style="background:${g.fill}"></i>${esc(g.name)}</span><span>${on ? (p % 1 ? p.toFixed(1) : p) + '%' : 'Claimed'}</span></div>`;
   }).join('') + `<div style="margin-top:4px"><span>Chance of winning something</span><span>100%</span></div>
-    <p class="arrd-fine" style="margin-top:8px">One gift per phone and per household. Codes expire ${DIAL.expiresDays} days after you claim them. Residential customers in ARR's service area. No purchase needed to play. <a href="${esc(RULES_URL)}" target="_blank" rel="noopener">Official rules</a></p>`;
+    <p class="arrd-fine" style="margin-top:8px">One gift per phone and per household. Codes expire ${expiryLine()} after you claim them. Residential customers in ARR's service area. No purchase needed to play. <a href="${esc(RULES_URL)}" target="_blank" rel="noopener">Official rules</a></p>`;
 }
 let statusReq = null;
 const getStatus = () => (statusReq ||= api('status').then((st) => {
@@ -597,7 +603,7 @@ function showClaim(hold) {
       <label class="arrd-check"><input type="checkbox" id="arrd-rem"> <span>Also text me a reminder before it expires, plus occasional offers from ARR. Up to 4 msgs/month. Msg &amp; data rates may apply. Reply STOP to opt out. Not required to win.</span></label>
       <p class="arrd-err" data-arrd="claimErr" role="alert"></p>
       <button class="arrd-btn" type="submit" data-arrd="claimBtn">Text me my code</button>
-      <p class="arrd-fine">We'll text your code to this number. Msg &amp; data rates may apply. One gift per phone and per household. Expires ${DIAL.expiresDays} days after you claim it. <a href="${esc(RULES_URL)}" target="_blank" rel="noopener">Official rules</a></p>
+      <p class="arrd-fine">We'll text your code to this number. Msg &amp; data rates may apply. One gift per phone and per household. Expires ${daysFor(g)} days after you claim it. <a href="${esc(RULES_URL)}" target="_blank" rel="noopener">Official rules</a></p>
     </form>`;
   c.querySelector('form').addEventListener('submit', (e) => claim(e, hold));
   startClock(hold.heldUntil);
@@ -609,6 +615,7 @@ function showDone(won, returning) {
   const g = GIFTS[won.gift.id] || won.gift, d = $('done');
   devState('code');
   $('code').textContent = won.code;
+  $('code').style.fontSize = won.code.length > 9 ? `${(10 * 9 / won.code.length).toFixed(2)}cqw` : '';   // SVC20-7K3PK is longer than ARR-7K3P
   $('codeGift').textContent = g.short;
   $('codeDate').textContent = `Good through ${won.expiresOn}`;
   d.innerHTML = `

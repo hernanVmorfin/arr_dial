@@ -3,6 +3,7 @@ import { monthName } from '../lib/rules.js';
 
 const pct = (n) => `${Number((+n).toFixed(2))}%`;
 const list = (a) => (a || []).join(', ') || 'none';
+const days = (v) => (v == null ? 'the default' : `${v} days`);
 
 const SETTINGS = [
   ['enabled', 'Dial', (v) => (v ? 'on' : 'paused')],
@@ -44,6 +45,9 @@ export function diffConfigs(a, b) {
     if (p.short !== g.short) words.push('short name');
     if ((p.big ?? '') !== (g.big ?? '') || (p.small ?? '') !== (g.small ?? '')) words.push('dial label');
     if (p.fill !== g.fill || p.ink !== g.ink) words.push('colours');
+    if ((p.codePrefix ?? '') !== (g.codePrefix ?? '')) words.push(`code prefix ${g.codePrefix || 'none'}`);
+    if ((p.seraLine ?? '') !== (g.seraLine ?? '')) words.push('Sera line');
+    if ((p.expiresDays ?? null) !== (g.expiresDays ?? null)) words.push(`codes expire after ${days(p.expiresDays)} → ${days(g.expiresDays)}`);
     if (words.length) out.push(`${g.name}: ${words.join(', ')}`);
   }
   const order = (c) => c.zones.map((z) => z.gift).join();

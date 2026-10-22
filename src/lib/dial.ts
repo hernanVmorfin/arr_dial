@@ -10,7 +10,7 @@
  *
  * Storage is the DialDb interface (lib/db.ts). Nothing here does I/O except through it. */
 import {
-  chicagoMonth, freeYearStatus, inSeason, membershipActive, pickGift, makeCode, normPhone, cleanFirstName,
+  chicagoMonth, freeYearStatus, inSeason, membershipActive, pickGift, makeCode, codePrefix, expiryDays, normPhone, cleanFirstName,
   validateAddress, expiresAt, holdUntil, dayAgo, isUuid
 } from './rules.js';
 import { addressKey } from './address.ts';
@@ -18,10 +18,12 @@ import type { Context, DialDb, Entry, Turn } from './db.ts';
 
 /** The shape of data/dial.json and of each published config. (Typed by hand so this module never imports JSON and
  *  runs under plain Node tests.) `active: false` takes a gift off the dial; `big`/`small` are its dial labels, which
- *  layoutZones copies onto its zones. `version` is added when loaded (lib/config.ts), never stored. */
+ *  layoutZones copies onto its zones. `codePrefix` starts its codes (SVC20-7K3PK) and never changes once published;
+ *  `seraLine` is the discount the CSR applies in Sera; `expiresDays` overrides the config's. `version` is added when
+ *  loaded (lib/config.ts), never stored. */
 export type Gift = {
   id: string; short: string; name: string; sub: string; weight: number; value: number; fill: string; ink: string;
-  active?: boolean; big?: string; small?: string;
+  active?: boolean; big?: string; small?: string; codePrefix?: string; seraLine?: string; expiresDays?: number;
 };
 export type Popup = { split: number; delayMs: number; snoozeDays: number; excludePaths: string[]; tab: boolean };
 export type Cfg = {
@@ -142,10 +144,10 @@ export async function claimGift(db: DialDb, cfg: Cfg, input: ClaimInput, now = n
   const utm = input.utm && typeof input.utm === 'object' ? cleanUtm(input.utm as Record<string, unknown>) : null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const res = await db.insertEntry({
-      code: makeCode(), turn_id: turn.id, phone, gift: gift.id, mem_month: isMem ? turn.mem_month : null,
+      code: makeCode(codePrefix(gift)), turn_id: turn.id, phone, gift: gift.id, mem_month: isMem ? turn.mem_month : null,
       first_name: null, address, zip, household_key: household, sms_marketing: input.reminders === true,
       utm, page: input.page ? String(input.page).slice(0, 300) : null, ip: input.ip,
-      created_at: now.toISOString(), expires_at: expiresAt(now, cfg.expiresDays).toISOString(),
+      created_at: now.toISOString(), expires_at: expiresAt(now, expiryDays(cfg, gift)).toISOString(),
       context: turn.context || null, address_key: address && zip ? addressKey(address, zip) : null
     });
     if (res.ok) {

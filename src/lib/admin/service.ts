@@ -6,9 +6,12 @@
  *                  15 minutes from one connection, or for one email, pause sign-in for that connection or email.
  *   publishConfig  validate, lay out the dial, insert as version N+1. Two people editing at once: the second publish
  *                  names the version it started from, finds a newer one, and is refused rather than overwriting.
- *   codeAction     redeem · void · restore · extend · resend, each written to the audit trail with who did it.
- *   freeYears      each month's free year as stored (won, held, free), for the Settings tab's schedule. */
-import { addDays, chicagoDay, chicagoMidnight, chicagoMonth, isCode, layoutZones, validateConfig } from '../rules.js';
+ *   codeAction     redeem · void · restore · extend · resend, each written to the audit trail with who did it. A CSR
+ *                  may only redeem and resend (lib/admin/roles.ts).
+ *   freeYears      each month's free year as stored (won, held, free), for the Settings tab's schedule.
+ *   team           add (as an admin or a CSR), remove, change someone's role, change your own password. */
+import { addDays, chicagoDay, chicagoMidnight, chicagoMonth, checkCode, readCode, layoutZones, validateConfig } from '../rules.js';
+import { CSR_CODE_ACTIONS, roleOf, type Role } from './roles.ts';
 import { codeStatus } from '../db.ts';
 import { forgetConfig } from '../config.ts';
 import type { AdminDb, DialDb, Entry } from '../db.ts';
@@ -61,8 +64,10 @@ export function cleanConfig(raw: any): Cfg {
   const gifts = (Array.isArray(r.gifts) ? r.gifts : []).map((g: any) => {
     const out: Record<string, unknown> = {
       id: s(g?.id), short: s(g?.short), name: s(g?.name), sub: s(g?.sub), weight: g?.weight, value: g?.value,
-      fill: s(g?.fill), ink: s(g?.ink), active: g?.active !== false
+      fill: s(g?.fill), ink: s(g?.ink), active: g?.active !== false,
+      codePrefix: typeof g?.codePrefix === 'string' ? g.codePrefix.trim().toUpperCase() : g?.codePrefix, seraLine: s(g?.seraLine)
     };
+    if (g?.expiresDays != null && g.expiresDays !== '') out.expiresDays = g.expiresDays;   // blank: the config's
     if (typeof g?.big === 'string') out.big = g.big.trim();
     if (typeof g?.small === 'string') out.small = g.small.trim();
     return out;
@@ -120,14 +125,18 @@ export async function setDialEnabled(db: Store, builtIn: unknown, input: { enabl
 }
 
 /** Publish an old version again. Gifts added since stay in the config, switched off, so their codes still resolve.
- *  Free-year months won since stay on the schedule, because the official rules print them. */
+ *  A version from before code prefixes and Sera lines takes them from the live config. Free-year months won since
+ *  stay on the schedule, because the official rules print them. */
 export async function rollbackTo(db: Store, builtIn: unknown, input: { version: unknown; baseVersion: unknown; by: string; ip: string | null }, now = new Date()): Promise<PublishOk | Fail> {
   const v = Number(input.version);
   if (!Number.isInteger(v) || v < 0) return fail(400, 'Pick a version to restore.');
   const old = v === 0 ? cleanConfig(builtIn) : ((await db.configVersion(v))?.config as Cfg | undefined);
   if (!old) return fail(404, `Version ${v} doesn't exist.`);
   const cur = await currentConfig(db, builtIn);
-  const gifts = [...old.gifts];
+  const gifts = old.gifts.map((g) => {
+    const live = cur.config.gifts.find((x) => x.id === g.id);
+    return live ? { ...g, codePrefix: live.codePrefix ?? g.codePrefix, seraLine: g.seraLine || live.seraLine } : g;
+  });
   for (const g of cur.config.gifts) if (!gifts.some((x) => x.id === g.id)) gifts.push({ ...g, active: false });
   // The old free-year schedule, less months that have ended since (they can't be added back), plus months won since.
   const listed = cur.config.membership.months, month = chicagoMonth(now);
@@ -139,14 +148,23 @@ export async function rollbackTo(db: Store, builtIn: unknown, input: { version: 
 /* ---------------- codes ---------------- */
 
 export type CodeActionName = 'redeem' | 'void' | 'restore' | 'extend' | 'resend';
-export type CodeActionInput = { code: unknown; action: unknown; note?: unknown; days?: unknown; by: string; ip: string | null };
+export type CodeActionInput = { code: unknown; action: unknown; note?: unknown; days?: unknown; by: string; role?: Role; ip: string | null };
 export const RESENDS_PER_DAY = 3;
 
+/** Why a typed code can't be looked up, or null when it can. */
+export function codeProblem(code: string | null): string | null {
+  if (!code) return 'That isn\'t a dial code. Codes look like SVC20-7K3PK.';
+  if (checkCode(code) === 'typo') return `One character in ${code} is off. Read the code back with the customer.`;
+  return null;
+}
+
 export async function codeAction(db: Store, input: CodeActionInput, now = new Date()): Promise<{ ok: true; entry: Entry; action: CodeActionName } | Fail> {
-  const code = String(input.code || '').trim().toUpperCase();
-  if (!isCode(code)) return fail(400, 'That isn\'t a dial code. Codes look like ARR-7K3P.');
+  const code = readCode(input.code);
+  const problem = codeProblem(code);
+  if (problem || !code) return fail(400, problem!);
   const action = input.action as CodeActionName;
   if (!['redeem', 'void', 'restore', 'extend', 'resend'].includes(action)) return fail(400, 'Unknown action.');
+  if (roleOf(input.role) === 'csr' && !CSR_CODE_ACTIONS.includes(action)) return fail(403, 'Ask an admin to void, restore or extend a code.');
   const entry = await db.entryByCode(code);
   if (!entry) return fail(404, `No code ${code}.`);
   const note = String(input.note || '').trim().slice(0, 300);
@@ -158,6 +176,7 @@ export async function codeAction(db: Store, input: CodeActionInput, now = new Da
   if (action === 'redeem') {
     if (st === 'void') return fail(409, 'This code was voided. Restore it first if it should be used.');
     if (st === 'redeemed') return fail(409, 'This code was already used.');
+    if (st === 'expired' && roleOf(input.role) === 'csr') return fail(409, 'This code has expired. Ask an admin to extend it first.');
     out = await db.redeemEntry(entry.id, now, `Redeemed in the admin by ${input.by}${note ? `: ${note}` : ''}`);
     if (!out) return fail(409, 'This code was used or voided a moment ago. Reload it.');
   } else if (action === 'void') {
@@ -209,25 +228,41 @@ export async function freeYears(db: Store, cfg: Cfg, now = new Date()): Promise<
 
 /* ---------------- team ---------------- */
 
-export async function addAdmin(db: Store, auth: PasswordAuth, input: { email: unknown; name: unknown; password: unknown; by: string; ip: string | null }, now = new Date()):
+export async function addAdmin(db: Store, auth: PasswordAuth, input: { email: unknown; name: unknown; password: unknown; role?: unknown; by: string; ip: string | null }, now = new Date()):
   Promise<{ ok: true; existingAccount: boolean } | Fail> {
   const email = String(input.email || '').trim().toLowerCase();
   const name = String(input.name || '').trim();
   const password = String(input.password || '');
   if (!EMAIL.test(email)) return fail(400, 'Enter a valid email.');
   if (!name || name.length > 60) return fail(400, 'Enter their name (up to 60 characters).');
+  if (input.role !== undefined && input.role !== 'admin' && input.role !== 'csr') return fail(400, 'Pick Admin or CSR.');
+  const role = roleOf(input.role);
   if (password.length < MIN_PASSWORD || password.length > 200) return fail(400, `The temporary password needs at least ${MIN_PASSWORD} characters.`);
-  if (await db.admin(email)) return fail(409, `${email} is already an admin.`);
+  if (await db.admin(email)) return fail(409, `${email} is already on the team.`);
   const made = await auth.createUser(email, password);
-  if ((await db.addAdmin({ email, name, created_at: now.toISOString(), created_by: input.by })) === 'exists') return fail(409, `${email} is already an admin.`);
-  await db.audit({ at: now.toISOString(), actor: input.by, action: 'admin_add', target: email, detail: { name, existingAccount: made === 'exists' }, ip: input.ip });
+  if ((await db.addAdmin({ email, name, role, created_at: now.toISOString(), created_by: input.by })) === 'exists') return fail(409, `${email} is already on the team.`);
+  await db.audit({ at: now.toISOString(), actor: input.by, action: 'admin_add', target: email, detail: { name, role, existingAccount: made === 'exists' }, ip: input.ip });
   return { ok: true, existingAccount: made === 'exists' };
+}
+
+/** Make someone an admin or a CSR. Not yourself: that keeps at least one admin who can undo it. */
+export async function setAdminRole(db: Store, input: { email: unknown; role: unknown; by: string; ip: string | null }, now = new Date()): Promise<{ ok: true } | Fail> {
+  const email = String(input.email || '').trim().toLowerCase();
+  if (input.role !== 'admin' && input.role !== 'csr') return fail(400, 'Pick Admin or CSR.');
+  if (email === input.by) return fail(400, 'You can\'t change your own role. Ask another admin.');
+  const a = await db.admin(email);
+  if (!a) return fail(404, `${email} isn't on the team.`);
+  const from = roleOf(a.role);
+  if (from === input.role) return { ok: true };
+  await db.setAdminRole(email, input.role);
+  await db.audit({ at: now.toISOString(), actor: input.by, action: 'role', target: email, detail: { from, to: input.role }, ip: input.ip });
+  return { ok: true };
 }
 
 export async function removeAdmin(db: Store, input: { email: unknown; by: string; ip: string | null }, now = new Date()): Promise<{ ok: true } | Fail> {
   const email = String(input.email || '').trim().toLowerCase();
   if (email === input.by) return fail(400, 'You can\'t remove yourself. Ask another admin.');
-  if (!(await db.admin(email))) return fail(404, `${email} isn't an admin.`);
+  if (!(await db.admin(email))) return fail(404, `${email} isn't on the team.`);
   await db.removeAdmin(email);
   await db.audit({ at: now.toISOString(), actor: input.by, action: 'admin_remove', target: email, detail: null, ip: input.ip });
   return { ok: true };

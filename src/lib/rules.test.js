@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   chicagoMonth, chicagoDate, pickGift, giftsInPlay, oddsInPlay, membershipsLeft, nextMembershipMonth, makeCode, isCode,
-  isUuid, normPhone, cleanFirstName, validateAddress, labelFontSize, arcUnits, LABEL
+  checkCode, readCode, codePrefix, expiryDays, isUuid, normPhone, cleanFirstName, validateAddress, labelFontSize, arcUnits, LABEL
 } from './rules.js';
 
 const cfg = JSON.parse(readFileSync(new URL('../../data/dial.json', import.meta.url), 'utf8'));
@@ -72,8 +72,50 @@ test('free years left and next unlock', () => {
 });
 
 test('codes avoid look-alike characters', () => {
-  for (let i = 0; i < 500; i++) assert.ok(isCode(makeCode()));
+  for (let i = 0; i < 500; i++) assert.ok(isCode(makeCode('SVC20')));
   assert.ok(!isCode('ARR-0OIL'));
+  assert.ok(isCode('ARR-7K3P'), 'codes from before promo prefixes still count');
+});
+
+const ALPHA = 'ACDEFGHJKMNPQRTUVWXY34679';
+test('the check character catches any one wrong character and any two neighbours swapped', () => {
+  for (let n = 0; n < 200; n++) {
+    const code = makeCode(['SVC20', 'DUCT50', 'YEAR', 'CALL'][n % 4]);
+    assert.match(code, /^[A-Z][A-Z0-9]{1,5}-[ACDEFGHJKMNPQRTUVWXY34679]{5}$/);
+    const dash = code.indexOf('-');
+    for (let i = dash + 1; i < code.length; i++) {
+      for (const c of ALPHA) if (c !== code[i]) assert.equal(checkCode(code.slice(0, i) + c + code.slice(i + 1)), 'typo', `${code} with ${c} at ${i}`);
+      if (i + 1 < code.length && code[i] !== code[i + 1]) assert.equal(checkCode(code.slice(0, i) + code[i + 1] + code[i] + code.slice(i + 2)), 'typo', `${code} swapped at ${i}`);
+    }
+  }
+  assert.equal(checkCode('SVC20-7K3P0'), 'typo', 'a character that is never used (0 for O) is a typo too');
+  assert.equal(checkCode('Ravinia'), null);
+  assert.equal(checkCode(''), null);
+});
+
+test('a code read with another promo\'s prefix almost never passes', () => {
+  let passed = 0;
+  for (let n = 0; n < 1000; n++) { const c = makeCode('SVC20'); if (isCode(`DUCT50${c.slice(5)}`)) passed++; }
+  assert.ok(passed < 100, `${passed} of 1000 passed`);
+});
+
+test('what people type is read as a code the way it is stored', () => {
+  const c = makeCode('SVC20'), body = c.slice(6);
+  assert.equal(readCode(` ${c.toLowerCase()} `), c);
+  assert.equal(readCode(`svc20 ${body}`), c);
+  assert.equal(readCode(`SVC20${body}`), /\d/.test(`SVC20${body}`) ? c : null);
+  assert.equal(readCode('arr7k3p'), 'ARR-7K3P');
+  assert.equal(readCode('Ravinia'), null, 'a street without a digit stays a street');
+  assert.equal(readCode('Maria'), null);
+  assert.equal(readCode('708 555 0142'), null);
+});
+
+test('a gift\'s prefix and expiry, with fallbacks for configs from before', () => {
+  assert.equal(codePrefix({ codePrefix: 'DUCT50' }), 'DUCT50');
+  assert.equal(codePrefix({}), 'ARR');
+  assert.equal(codePrefix({ codePrefix: 'bad prefix' }), 'ARR');
+  assert.equal(expiryDays(cfg, { expiresDays: 60 }), 60);
+  assert.equal(expiryDays(cfg, {}), cfg.expiresDays);
 });
 
 test('ids, phones and names', () => {
@@ -101,6 +143,20 @@ import { validateConfig, layoutZones, activeGifts, contrast, chicagoDay, chicago
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
+test('validateConfig: every promo has its own prefix and a Sera line; a published prefix never changes', () => {
+  const with_ = (fn) => { const c = clone(cfg); fn(c); return c; };
+  const errs = (c, prev) => validateConfig(c, prev).errors;
+  assert.ok(errs(with_((c) => { c.gifts[1].codePrefix = 'SVC20'; })).some((e) => /share the code prefix SVC20/.test(e)));
+  assert.ok(errs(with_((c) => { c.gifts[0].codePrefix = '20OFF'; })).some((e) => /code prefix, 2 to 6/.test(e)), 'starts with a letter');
+  assert.ok(errs(with_((c) => { c.gifts[0].codePrefix = 'TOOLONG7'; })).some((e) => /code prefix, 2 to 6/.test(e)));
+  assert.ok(errs(with_((c) => { delete c.gifts[0].seraLine; })).some((e) => /Sera line/.test(e)));
+  assert.ok(errs(with_((c) => { c.gifts[0].expiresDays = 0; })).some((e) => /1 to 365 days/.test(e)));
+  assert.deepEqual(errs(with_((c) => { c.gifts[0].expiresDays = 60; })), []);
+  assert.ok(errs(with_((c) => { c.gifts[0].codePrefix = 'TWENTY'; }), cfg).some((e) => /start with SVC20, so the code prefix can't change/.test(e)));
+  const before = with_((c) => { delete c.gifts[0].codePrefix; });
+  assert.deepEqual(errs(cfg, before), [], 'a promo published before prefixes can get one');
+});
+
 test('the built-in config passes validation with no warnings', () => {
   assert.deepEqual(validateConfig(cfg), { errors: [], warnings: [] });
   assert.deepEqual(validateConfig(cfg, cfg), { errors: [], warnings: [] });
@@ -121,7 +177,7 @@ test('layoutZones keeps the order and each gift\'s split, scaled to new odds', (
 test('layoutZones drops a gift that is off, adds a new one on the HEAT end, and takes labels from the gift', () => {
   const gifts = clone(cfg.gifts);
   gifts.find((g) => g.id === 'wh50').active = false;
-  gifts.push({ id: 'tune', short: '$40 OFF TUNE-UP', name: '$40 off a tune-up', sub: 'Furnace or AC', weight: 15, value: 40, fill: '#14284e', ink: '#f9f7f8', big: '$40 OFF', small: 'TUNE-UP' });
+  gifts.push({ id: 'tune', short: '$40 OFF TUNE-UP', name: '$40 off a tune-up', sub: 'Furnace or AC', weight: 15, value: 40, fill: '#14284e', ink: '#f9f7f8', big: '$40 OFF', small: 'TUNE-UP', codePrefix: 'TUNE40', seraLine: 'Comfort Dial $40 tune-up' });
   const z = layoutZones(cfg.zones, gifts);
   assert.ok(!z.some((x) => x.gift === 'wh50'));
   assert.deepEqual(z.at(-1), { gift: 'tune', pct: 15, big: '$40 OFF', small: 'TUNE-UP' });

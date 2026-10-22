@@ -9,7 +9,7 @@ import { forgetPodiumToken, jwtExpiry, podiumAuth, podiumConfigured, podiumMode,
 
 const cfg: Cfg = JSON.parse(readFileSync(new URL('../../data/dial.json', import.meta.url), 'utf8'));
 const gift = cfg.gifts.find((g) => g.id === 'svc20')!;
-const entry = { id: 'e1', code: 'ARR-7K3P', phone: '7085550142', gift: 'svc20', expires_at: '2026-11-15T15:00:00.000Z' } as Entry;
+const entry = { id: 'e1', code: 'SVC20-7K3PK', phone: '7085550142', gift: 'svc20', expires_at: '2026-11-15T15:00:00.000Z' } as Entry;
 const T0 = new Date('2026-10-19T15:00:00Z');
 const at = (ms: number) => new Date(T0.getTime() + ms);
 const HOUR = 3600e3;

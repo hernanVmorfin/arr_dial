@@ -2,7 +2,7 @@
 /* /dial/rules — the official rules, generated from the live config (the admin's latest publish, or data/dial.json)
  * so the odds, values, dates and limits on this page can never drift from what the server actually does. While the
  * config has rulesFinal:false the page says it is a draft; switch it to final in the admin after the legal read. */
-import { activeGifts, membershipActive, oddsInPlay } from '../lib/rules.js';
+import { activeGifts, codePrefix, expiryDays, membershipActive, oddsInPlay } from '../lib/rules.js';
 import { configFor, dbFor, envOf } from '../lib/runtime.ts';
 import type { Gift } from '../lib/dial.ts';
 
@@ -18,6 +18,8 @@ const endDate = new Date(Date.UTC(ly, lm, 0)).toLocaleDateString('en-US', { mont
 const withMem = oddsInPlay(DIAL, true), withoutMem = oddsInPlay(DIAL, false);
 const pct = (n: number) => `${Number(n.toFixed(1))}%`;
 const svc = gifts.find((g) => g.id !== MEM) || gifts[0];
+const days = [...new Set(gifts.map((g) => expiryDays(DIAL, g)))];
+const sameDays = days.length === 1;
 Astro.response.headers.set('cache-control', 'no-store');
 ---
 <!doctype html>
@@ -76,10 +78,10 @@ Astro.response.headers.set('cache-control', 'no-store');
       <p>Every turn wins exactly one gift.</p>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Gift</th><th class="num">Value</th><th class="num">Odds</th></tr></thead>
+          <thead><tr><th>Gift</th><th class="num">Value</th><th class="num">Odds</th>{!sameDays && <th class="num">Code lasts</th>}</tr></thead>
           <tbody>
             {gifts.map((g) => (
-              <tr><td>{g.name}<br /><span style="color:#5c6672;font-size:13px">{g.sub}</span></td><td class="num">${g.value}</td><td class="num">{pct(withMem[g.id])}</td></tr>
+              <tr><td>{g.name}<br /><span style="color:#5c6672;font-size:13px">{g.sub}</span></td><td class="num">${g.value}</td><td class="num">{pct(withMem[g.id])}</td>{!sameDays && <td class="num">{expiryDays(DIAL, g)} days</td>}</tr>
             ))}
           </tbody>
         </table>
@@ -95,7 +97,7 @@ Astro.response.headers.set('cache-control', 'no-store');
       </ul>
 
       <h2>8. Using your code</h2>
-      <p>Codes look like ARR-XXXX. Give your code when you book. It is tied to the mobile number you used to claim it. Codes expire {DIAL.expiresDays} days after you claim them. Each can be used once, has no cash value, can't be transferred, and can't be combined with other offers. Codes apply to residential service in ARR's service area.{hasMem && ` The free year covers 12 months of ARR's $${DIAL.gifts.find((g) => g.id === MEM)?.value} membership.`}</p>
+      <p>Codes look like {codePrefix(svc)}-XXXXX, where the first part names the gift. Give your code when you book. It is tied to the mobile number you used to claim it. {sameDays ? `Codes expire ${days[0]} days after you claim them.` : 'Each code expires the number of days after you claim it shown for its gift in section 6.'} Each can be used once, has no cash value, can't be transferred, and can't be combined with other offers. Codes apply to residential service in ARR's service area.{hasMem && ` The free year covers 12 months of ARR's $${DIAL.gifts.find((g) => g.id === MEM)?.value} membership.`}</p>
 
       <h2>9. Texts</h2>
       <p>When you claim a gift, we send one text with your code to the number you entered. If you also tick the reminder box, you agree to receive reminder and marketing texts from ARR at that number, up to 4 per month. You don't have to agree to win. Message and data rates may apply. Reply STOP to opt out or HELP for help.</p>

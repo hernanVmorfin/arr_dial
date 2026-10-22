@@ -116,6 +116,7 @@ export function memoryDb(seed: MemorySeed = {}): MemoryDb {
       return 'ok';
     },
     async removeAdmin(email) { const i = adminRows.findIndex((x) => x.email === email); if (i >= 0) adminRows.splice(i, 1); },
+    async setAdminRole(email, role) { const a = adminRows.find((x) => x.email === email); if (a) a.role = role; },
 
     async audit(row) { auditRows.push({ ...row }); },
     async auditCount(action, since, by) {
