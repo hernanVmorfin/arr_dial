@@ -98,7 +98,7 @@ books more, set the split back to 100%. If it books less, set it to 0% (or remov
 | `dial_hold_expired` | The 10 minutes ran out |
 | `dial_address_added` | Optional address saved |
 | `dial_call_clicked`, `dial_book_clicked` | Call or Book online from the popup |
-| `dial_no_thanks`, `dial_closed` | Closed |
+| `dial_no_thanks`, `dial_closed` | Back to the site (message and code screens); closed any way |
 
 ## Configuration
 

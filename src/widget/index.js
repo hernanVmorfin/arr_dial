@@ -6,7 +6,8 @@
  * the admin (<base>admin). data/dial.json is bundled only as the fallback drawn before that answer arrives.
  *
  * An ARR smart thermostat on the wall: gifts sit on a 50–90°F ring (face.js), arc length = the real odds, the free
- * year raised as the top prize. Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never
+ * year raised as the top prize. The first screen is only the thermostat, floating over the page; the card with the
+ * claim form comes in after a win. Turn first, claim second: one tap turns the dial (/api/turn picks the gift, never
  * this file, and holds it for a few minutes), then a mobile number claims it (/api/claim). A free-year winner also
  * gives a home address. The screen wakes with the time and the visitor's own weather (/api/weather), heats (red) while
  * the needle climbs and cools (blue) while it falls, shows a HOLD countdown while they claim, and ends on their code.
@@ -154,7 +155,7 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
   --head:"Archivo","Helvetica Neue",Arial,sans-serif;--sub:"Oswald","Barlow Condensed","Arial Narrow",sans-serif;--body:"Inter",-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
 .arrd-root,.arrd-root *,.arrd-tab{box-sizing:border-box}
 .arrd-root[hidden],.arrd-root [hidden],.arrd-tab[hidden]{display:none!important}
-.arrd-root{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(20,40,78,.55);font-family:var(--body);color:var(--black);line-height:1.5;-webkit-font-smoothing:antialiased;text-align:left}
+.arrd-root{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(20,40,78,.55);transition:background-color .3s;font-family:var(--body);color:var(--black);line-height:1.5;-webkit-font-smoothing:antialiased;text-align:left}
 .arrd-root p{margin:0}
 .arrd-sheet{position:relative;width:100%;max-width:440px;max-height:calc(100vh - 32px);overflow-y:auto;overscroll-behavior:contain;background:radial-gradient(120% 80% at 30% 0%,#f9f7f8 0%,#dee5ee 72%,#c9d4e2 100%);border-radius:18px;box-shadow:0 24px 70px -20px rgba(0,0,0,.6);padding:12px 24px 22px;animation:arrd-in .3s ease-out}
 @keyframes arrd-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
@@ -171,8 +172,23 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-glass button:focus-visible,.arrd-glass a:focus-visible{outline-color:var(--yellow);outline-offset:2px}
 .arrd-sec{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:4px}
 .arrd-center{text-align:center;align-items:center}
-.arrd-h{font:900 clamp(26px,7.4vw,36px)/1 var(--head);font-stretch:125%;text-transform:uppercase;letter-spacing:-.02em;margin:2px 0 0;color:var(--blue);text-wrap:balance}
-.arrd-lede{color:var(--muted);font-size:15px}
+
+/* ---- the first screen: only the thermostat, floating over the page (root.arrd-bare). After a win the card comes in
+ * around it without a second entrance (root.arrd-settle). ---- */
+.arrd-root.arrd-bare{background:rgba(20,40,78,.72);align-items:center;padding:16px}
+.arrd-bare .arrd-sheet{width:auto;max-width:none;max-height:none;overflow:visible;background:none;box-shadow:none;border-radius:0;padding:0;animation:arrd-pop .4s cubic-bezier(.2,.9,.3,1.15)}
+@keyframes arrd-pop{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:none}}
+@keyframes arrd-fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.arrd-settle .arrd-sheet{animation:none}
+.arrd-settle [data-arrd="claim"],.arrd-settle [data-arrd="done"],.arrd-settle [data-arrd="msg"]{animation:arrd-fade .35s ease-out}
+.arrd-bare .arrd-head{justify-content:flex-end;min-height:0;margin:0 0 8px}
+.arrd-bare .arrd-brand{display:none}
+.arrd-bare .arrd-x{background:var(--white);border-color:transparent;box-shadow:0 6px 16px -6px rgba(0,0,0,.6)}
+.arrd-bare .arrd-dev{width:min(420px,86vw,60vh);margin:0 auto}
+.arrd-bare [data-arrd="play"]{position:relative;margin-top:12px;gap:8px}
+.arrd-bare .arrd-no{color:var(--white);opacity:.9}
+.arrd-bare .arrd-err{color:#fff;background:var(--red);border-radius:8px;padding:8px 12px;font-size:13.5px;text-align:center;max-width:min(420px,86vw)}
+.arrd-bare .arrd-odds{position:absolute;z-index:3;left:0;right:0;bottom:calc(100% + 10px);max-height:min(60vh,390px);overflow-y:auto;background:var(--white);border:0;border-radius:14px;padding:12px 14px;box-shadow:0 18px 40px -12px rgba(0,0,0,.55)}
 
 /* ---- the thermostat ---- */
 .arrd-dev{position:relative;width:min(350px,84vw,42vh);aspect-ratio:1/1;margin:6px auto 8px;border-radius:22%;padding:1%;background:linear-gradient(135deg,#f9f7f8 0%,#a9bcd6 42%,#5c6672 100%);box-shadow:0 22px 40px -14px rgba(20,40,78,.6),0 6px 12px -4px rgba(20,40,78,.35);transition:width .35s ease}
@@ -207,6 +223,7 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-side-c{width:12cqw;height:12cqw;border-radius:50%;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;transition:background .15s}
 .arrd-side-c .arrd-i{width:4.2cqw;height:4.2cqw}
 .arrd-side:hover .arrd-side-c{background:var(--blue)}
+.arrd-hubbtn{z-index:2;left:35%;top:34%;width:30%;height:30%;border:0;border-radius:50%;padding:0;margin:0;background:none;cursor:pointer}
 .arrd-side-l{font:600 2.5cqw/1 var(--sub);letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
 .arrd-dev.is-small .arrd-side{display:none}
 .arrd-wx{left:6%;right:6%;top:74.5%;text-align:center;pointer-events:none}
@@ -239,15 +256,11 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-codely .d{font:400 3cqw/1.3 var(--body);color:var(--soft)}
 
 /* ---- below the thermostat ---- */
-.arrd-scar{font:500 13px/1.35 var(--sub);text-transform:uppercase;letter-spacing:.07em;color:var(--red);min-height:1.35em;text-wrap:balance}
-.arrd-links{display:flex;justify-content:center;align-items:center;gap:6px;color:var(--muted)}
 .arrd-btn{display:flex;justify-content:center;align-items:center;font:600 17px/1 var(--sub);text-transform:uppercase;letter-spacing:.1em;padding:17px 22px;border-radius:10px;text-decoration:none;background:var(--red);color:#fff;border:2px solid var(--red);cursor:pointer;width:100%;margin:0}
 .arrd-btn:hover{filter:brightness(1.06)}
 .arrd-btn[disabled]{opacity:.6;cursor:wait}
 .arrd-btn.ghost{background:transparent;color:var(--navy);border-color:rgba(20,40,78,.45)}
 .arrd-no{background:none;border:0;color:var(--muted);font:500 14px/1.4 var(--body);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px;align-self:center}
-.arrd-call{font-size:14px;color:var(--black);text-align:center}
-.arrd-call a{color:var(--blue);font-weight:700;text-decoration:none;white-space:nowrap}
 .arrd-link{background:none;border:0;color:var(--muted);font:400 12.5px/1.4 var(--body);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:2px;align-self:center}
 .arrd-odds{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;width:100%;text-align:left}
 .arrd-odds div{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-variant-numeric:tabular-nums;color:var(--black)}
@@ -283,24 +296,21 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 /* ---------------- markup ---------------- */
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MARKUP = `
-<div class="arrd-sheet" role="dialog" aria-modal="true" aria-labelledby="arrd-title">
+<div class="arrd-sheet" role="dialog" aria-modal="true" aria-label="Comfort Dial: turn the thermostat for a gift from ARR Heating + Cooling">
   <div class="arrd-head">
     <p class="arrd-brand"><b>ARR Heating + Cooling</b> · Since 1935</p>
     <button class="arrd-x" type="button" aria-label="Close" data-arrd="close">×</button>
   </div>
-  <div class="arrd-sec arrd-center" data-arrd="playTop">
-    <h2 class="arrd-h" id="arrd-title">Turn the dial</h2>
-    <p class="arrd-lede">Every turn wins a real gift. Odds are posted.</p>
-  </div>
   <div class="arrd-dev" data-arrd="dev" data-state="ready">
     <div class="arrd-glass" data-arrd="glass">
-      <svg class="arrd-face arrd-ly" data-show="ready heating won" data-arrd="svg" viewBox="${VIEWBOX}" role="img" aria-label="Comfort Dial thermostat with gifts on a 50 to 90 degree scale. Each gift's slice is sized by its odds. Press Turn the dial.">${svgInner()}
+      <svg class="arrd-face arrd-ly" data-show="ready heating won" data-arrd="svg" viewBox="${VIEWBOX}" role="img" aria-label="Comfort Dial thermostat with gifts on a 50 to 90 degree scale. Each gift's slice is sized by its odds. Every turn wins.">${svgInner()}
       </svg>
       <div class="arrd-sb">
         <span class="arrd-sb-l">${icon('wifi')}${icon('flame', 'arrd-sb-heat')}${icon('flake', 'arrd-sb-cool')}</span>
         <span class="arrd-pill" data-arrd="pill"></span>
         <button class="arrd-mute" type="button" data-arrd="mute" aria-pressed="false" aria-label="Mute the dial's sounds">${icon('sound')}</button>
       </div>
+      <button class="arrd-hubbtn arrd-ly" type="button" data-show="wake ready" data-arrd="turn" aria-label="Turn the dial"></button>
       <a class="arrd-side arrd-ly" data-show="ready heating won" style="left:4%" href="${esc(DIAL.bookUrl)}" data-arrd="book" aria-label="Book online"><span class="arrd-side-c">${icon('cal')}</span><span class="arrd-side-l" aria-hidden="true">Book</span></a>
       <a class="arrd-side arrd-ly" data-show="ready heating won" style="right:4%" href="tel:${TEL}" data-arrd="call" aria-label="Call ${esc(DIAL.phone)}"><span class="arrd-side-c">${icon('phone')}</span><span class="arrd-side-l" aria-hidden="true">Call</span></a>
       <div class="arrd-wx arrd-ly" data-show="ready heating"><p class="arrd-wx1" data-arrd="wx1"></p><p class="arrd-wx2" data-arrd="wx2"></p></div>
@@ -321,12 +331,9 @@ const MARKUP = `
     </div>
   </div>
   <section class="arrd-sec arrd-center" data-arrd="play">
-    <p class="arrd-scar" data-arrd="scar" aria-live="polite"></p>
     <p class="arrd-err" data-arrd="playErr" role="alert"></p>
-    <button class="arrd-btn" type="button" data-arrd="turn">Turn the dial</button>
     <div data-arrd="ts"></div>
-    <p class="arrd-call">No heat right now? <a href="tel:${TEL}" data-arrd="call">Call ${esc(DIAL.phone)}</a></p>
-    <div class="arrd-links"><button class="arrd-no" type="button" data-arrd="close">No thanks</button><span aria-hidden="true">·</span><button class="arrd-no" type="button" data-arrd="oddsBtn" aria-expanded="false">Odds &amp; rules</button></div>
+    <button class="arrd-no" type="button" data-arrd="oddsBtn" aria-expanded="false">Odds &amp; rules</button>
     <div class="arrd-odds" data-arrd="odds" hidden></div>
   </section>
   <section class="arrd-sec" data-arrd="claim" hidden></section>
@@ -495,15 +502,7 @@ function turnstileToken() {
   return new Promise((res) => { tsWaiters.push((t) => res(t ? use(t) : null)); setTimeout(() => res(null), 10000); });
 }
 
-/* ---------------- status line and odds ---------------- */
-const monthLabel = (ym) => { if (!ym) return ''; const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long' }); };
-function renderScarcity(st) {
-  let text = '';
-  if (st && st.membershipsLeft === 0) text = 'This season\'s free years are all claimed';
-  else if (st && st.membershipOpen) text = `${monthLabel(st.month)}'s free year is still up for grabs`;
-  else if (st && st.nextUnlock) text = `${monthLabel(st.month)}'s free year is taken. Next one: ${monthLabel(st.nextUnlock).slice(0, 3)} 1`;
-  $('scar').textContent = text;
-}
+/* ---------------- odds ---------------- */
 function renderOdds() {
   if (!root) return;
   const pool = DIAL.gifts.filter((g) => g.id !== MEM || memOpen), tot = pool.reduce((s, g) => s + g.weight, 0);
@@ -526,14 +525,16 @@ async function loadStatus() {
   statusLoaded = true;
   if (st.enabled === false) { if (!$('play').hidden) showMsg('The dial is resting', `We can still take care of you. Call ${DIAL.phone}.`); return; }
   memOpen = !!st.membershipOpen;
-  renderScarcity(st); renderOdds(); buildFace();
+  renderOdds(); buildFace();
   loadTurnstile(st.turnstileSiteKey);
 }
 
 /* ---------------- screens ---------------- */
 function show(name) {
   ['play', 'claim', 'done', 'msg'].forEach((k) => { $(k).hidden = k !== name; });
-  $('playTop').hidden = name !== 'play';
+  const bare = name === 'play';
+  if (!bare && root.classList.contains('arrd-bare')) root.classList.add('arrd-settle');   // the card grows around the thermostat
+  root.classList.toggle('arrd-bare', bare);
   $('dev').hidden = name === 'msg';
   $('dev').classList.toggle('is-small', name === 'claim' || name === 'done');
   if (name !== 'claim') stopClock();
@@ -545,7 +546,6 @@ function focusFirst(sel) { setTimeout(() => { const n = root.querySelector(sel);
 /* The screen wakes on the time and weather, then shows the dial. A tap while it's waking turns it right away. */
 function showPlay(wake) {
   show('play');
-  const b = $('turn'); b.disabled = false; b.textContent = 'Turn the dial';
   $('playErr').textContent = '';
   light(null); readyHub();
   clearTimeout(wakeTimer);
@@ -651,7 +651,7 @@ async function turn() {
   audio();   // unlock sound inside the tap
   busy = true;
   clearTimeout(wakeTimer);
-  const b = $('turn'); b.disabled = true; b.textContent = 'Turning…'; $('playErr').textContent = '';
+  $('playErr').textContent = '';
   devState('heating');
   track('dial_turn_pressed');
   let res;
@@ -659,7 +659,7 @@ async function turn() {
     res = await api('turn', { device, token: await turnstileToken(), context: visitContext() });
   } catch (e) { res = { error: `We couldn't reach the dial. Check your connection, or call ${DIAL.phone}.` }; }
   if (!res.ok) {
-    busy = false; b.disabled = false; b.textContent = 'Turn the dial';
+    busy = false;
     devState('ready'); light(null); readyHub();
     if (res.reason === 'limit') showMsg('That\'s all for today', res.error);
     else $('playErr').textContent = res.error || `Something went wrong on our end. Call ${DIAL.phone}.`;
@@ -669,7 +669,7 @@ async function turn() {
   if (!segs.some((x) => x.gift.id === res.gift.id)) { statusReq = null; await getStatus(); }   // the config changed since the dial was drawn
   await turnTo(res.gift.id);
   chime();
-  devState('won'); wonHub(GIFTS[res.gift.id] || res.gift); b.textContent = 'You won';
+  devState('won'); wonHub(GIFTS[res.gift.id] || res.gift);
   const hold = { turn: res.turn, gift: res.gift, heldUntil: res.heldUntil };
   store.set({ hold });
   track('dial_turned', { gift: res.gift.id });
@@ -754,7 +754,7 @@ function open(trigger = 'button') {
   mount(); loadFonts();
   if (isOpen) return;
   isOpen = true; lastFocus = document.activeElement;
-  root.hidden = false; document.documentElement.classList.add('arrd-open'); tab.hidden = true;
+  root.hidden = false; root.classList.remove('arrd-settle'); document.documentElement.classList.add('arrd-open'); tab.hidden = true;
   document.addEventListener('keydown', onKey);
   store.set({ seenAt: Date.now() });
   paintClock(); uiClock = setInterval(paintClock, 15000);
