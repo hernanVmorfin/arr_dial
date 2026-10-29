@@ -15,7 +15,7 @@ Use these in message templates as `{{ event.<name> }}`:
 
 | Property | Example |
 |---|---|
-| `code` | ARR-7K3P |
+| `code` | SVC20-7K3PK |
 | `gift_name` | $20 off any service |
 | `gift_short` | $20 OFF |
 | `gift_value` | 20 |
@@ -58,6 +58,11 @@ Do this after the launch test (RUNBOOK step 8) has sent the first event, so the 
 9. Preview with a test profile, then set the flow **Live**.
 
 Both texts send people to the office number, so replies and calls land where CSRs work, not in Klaviyo's inbox.
+
+The timing assumes codes that last 30 days (Settings' default). A promo can set its own expiry in Promos & odds; the
+texts always print that code's real date, but a promo whose codes last less than 25 days would get the day 25 text
+after its code has run out. Give such a promo its own branch: a conditional split on `gift_id` (also an event
+property) before step 6.
 
 ## Optional
 

@@ -12,17 +12,17 @@ import { envVar } from './env.ts';
 const cfg: Cfg = JSON.parse(readFileSync(new URL('../../data/dial.json', import.meta.url), 'utf8'));
 const gift = cfg.gifts.find((g) => g.id === 'svc20')!;
 const entry: Entry = {
-  id: 'e1', code: 'ARR-7K3P', turn_id: 't1', phone: '7085550142', gift: 'svc20', mem_month: null, first_name: null,
+  id: 'e1', code: 'SVC20-7K3PK', turn_id: 't1', phone: '7085550142', gift: 'svc20', mem_month: null, first_name: null,
   address: null, zip: null, household_key: null, sms_marketing: true, utm: { utm_source: 'facebook', utm_campaign: 'fall' },
   page: 'https://www.alwaysreadyrepair.com/', ip: '1.2.3.4', monday_item_id: null,
   created_at: '2026-10-16T15:00:00.000Z', expires_at: '2026-11-15T15:00:00.000Z', redeemed_at: null, redeemed_note: null
 };
 
 test('Monday: the code is in the item name and the paste block tells the CSR what to do', () => {
-  assert.equal(itemName(entry, gift), 'Comfort Dial ARR-7K3P: $20 off any service');
-  assert.equal(itemName({ ...entry, first_name: 'Maria' }, gift), 'Maria · Comfort Dial ARR-7K3P: $20 off any service');
+  assert.equal(itemName(entry, gift), 'Comfort Dial SVC20-7K3PK: $20 off any service');
+  assert.equal(itemName({ ...entry, first_name: 'Maria' }, gift), 'Maria · Comfort Dial SVC20-7K3PK: $20 off any service');
   const p = pasteBlock(entry, gift, cfg);
-  assert.match(p, /COMFORT DIAL ARR-7K3P/);
+  assert.match(p, /COMFORT DIAL SVC20-7K3PK/);
   assert.match(p, /\(708\) 555-0142/);
   assert.match(p, /Expires: November 15, 2026/);
   assert.match(p, /reminders yes/);
@@ -51,7 +51,7 @@ test('Monday webhook: challenge, redeemed, and everything else ignored', () => {
 
 test('Podium: fixed copy with the code, gift and date', () => {
   const t = codeText(entry, gift, cfg);
-  assert.equal(t, 'Always Ready Repair: your Comfort Dial gift is $20 off any service. Code ARR-7K3P, good through November 15. Call or text (708) 671-0813 to book and give the code.');
+  assert.equal(t, 'Always Ready Repair: your Comfort Dial gift is $20 off any service. Code SVC20-7K3PK, good through November 15. Call or text (708) 671-0813 to book and give the code.');
   assert.ok(t.length <= 320);
 });
 
@@ -59,13 +59,13 @@ test('Klaviyo: won event carries what the reminder flow prints, keyed on the cod
   const ev = wonEvent(entry, gift, cfg) as any;
   const a = ev.data.attributes;
   assert.equal(a.metric.data.attributes.name, METRIC_WON);
-  assert.equal(a.unique_id, 'ARR-7K3P');
+  assert.equal(a.unique_id, 'SVC20-7K3PK');
   assert.equal(a.profile.data.attributes.phone_number, '+17085550142');
   assert.equal(a.properties.expires_on, 'November 15');
   assert.equal(a.properties.gift_short, '$20 OFF');
   assert.equal(a.properties.utm_source, 'facebook');
   const r = redeemedEvent(entry, gift, new Date('2026-10-20T00:00:00Z')) as any;
-  assert.equal(r.data.attributes.unique_id, 'ARR-7K3P-redeemed');
+  assert.equal(r.data.attributes.unique_id, 'SVC20-7K3PK-redeemed');
 });
 
 test('Klaviyo: SMS subscription only names a list when one is configured', () => {

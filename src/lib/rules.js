@@ -1,5 +1,5 @@
 /* Comfort Dial rules: pure functions shared by the API and its tests. No I/O here.
- * The data (gifts, odds, membership months, limits) is data/dial.json. */
+ * The data (gifts, odds, membership months, limits, code prefixes) is data/dial.json. */
 
 const CODE_ALPHABET = 'ACDEFGHJKMNPQRTUVWXY34679';   // no 0/O, 1/I/L, 2/Z, 5/S, 8/B: codes get read aloud over the phone
 
@@ -116,13 +116,50 @@ export function oddsInPlay(cfg, membershipAvailable) {
   return Object.fromEntries(cfg.gifts.map((g) => [g.id, pool.includes(g) ? (g.weight / total) * 100 : 0]));
 }
 
-export function makeCode(rand = random) {
-  let s = '';
-  for (let i = 0; i < 4; i++) s += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length)];
-  return `ARR-${s}`;
+/* A code is its promo's prefix, a dash, four random characters and a check character: SVC20-7K3PK. The check makes
+ * s + 6c ≡ 0 (mod 25), where s weighs the four random characters 1, 2, 3, 4 and adds the prefix in. Every weight
+ * (1 2 3 4 6) and every gap between neighbours is prime to 25, so one wrong character, or two neighbours swapped,
+ * always fails the check; a code read out with another promo's prefix almost always does. */
+export const PREFIX = /^[A-Z][A-Z0-9]{1,5}$/;
+function checkChar(prefix, body) {
+  let s = 0;
+  for (let i = 0; i < prefix.length; i++) s += (i + 1) * parseInt(prefix[i], 36);
+  for (let i = 0; i < 4; i++) s += (i + 1) * CODE_ALPHABET.indexOf(body[i]);
+  return CODE_ALPHABET[(4 * s) % 25];   // 4 = −1/6 (mod 25)
 }
 
-export const isCode = (s) => /^ARR-[ACDEFGHJKMNPQRTUVWXY34679]{4}$/.test(String(s || ''));
+export function makeCode(prefix = 'ARR', rand = random) {
+  let body = '';
+  for (let i = 0; i < 4; i++) body += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length)];
+  return `${prefix}-${body}${checkChar(prefix, body)}`;
+}
+
+/** 'ok' for a real code, 'typo' for one shaped like a code whose check fails (a character misheard or mistyped), null
+ *  for anything else. ARR-7K3P, the format before promo prefixes, is still a real code. */
+export function checkCode(s) {
+  const str = String(s || '');
+  if (/^ARR-[ACDEFGHJKMNPQRTUVWXY34679]{4}$/.test(str)) return 'ok';
+  const m = /^([A-Z][A-Z0-9]{1,5})-([A-Z0-9]{4})([A-Z0-9])$/.exec(str);
+  if (!m) return null;
+  return [...m[2]].every((c) => CODE_ALPHABET.includes(c)) && checkChar(m[1], m[2]) === m[3] ? 'ok' : 'typo';
+}
+export const isCode = (s) => checkCode(s) === 'ok';
+
+/** What someone typed, written the way codes are stored: upper case, dash in place. "svc20 7k3pk" and "SVC207K3PK"
+ *  read as SVC20-7K3PK, "arr7k3p" as ARR-7K3P. Without a dash or space it needs a digit, so "Ravinia" stays a
+ *  street. null when it isn't shaped like a code. */
+export function readCode(raw) {
+  const s = String(raw || '').trim().toUpperCase();
+  const old = /^ARR[-\s]?([ACDEFGHJKMNPQRTUVWXY34679]{4})$/.exec(s);
+  if (old) return `ARR-${old[1]}`;
+  const m = /^([A-Z][A-Z0-9]{1,5})\s*[-\s]\s*([A-Z0-9]{5})$/.exec(s) || (/\d/.test(s) ? /^([A-Z][A-Z0-9]{1,5})([A-Z0-9]{5})$/.exec(s) : null);
+  return m ? `${m[1]}-${m[2]}` : null;
+}
+
+/** The prefix a gift's codes start with, and how many days they last. A config published before prefixes existed
+ *  falls back to ARR; a gift without its own expiry uses the config's. */
+export const codePrefix = (gift) => (gift && PREFIX.test(String(gift.codePrefix)) ? gift.codePrefix : 'ARR');
+export const expiryDays = (cfg, gift) => (gift && Number.isInteger(gift.expiresDays) ? gift.expiresDays : cfg.expiresDays);
 export const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || ''));
 
 /** US number to 10 digits, or null. Accepts (708) 555-0142, 708.555.0142, +1 708 555 0142. */
@@ -205,7 +242,8 @@ export function contrast(a, b) {
 }
 
 /** Everything a config must satisfy before it goes live. `prev` is the version it replaces: a gift that was ever
- *  published can be switched off but never removed, because codes already issued point at it. `ctx` adds what only
+ *  published can be switched off but never removed, and its code prefix never changes, because codes already issued
+ *  point at it and start with it. `ctx` adds what only
  *  the database knows, for the free-year schedule: this Chicago month (a month that has ended can't be added) and
  *  the months whose free year was won (they stay listed, because the official rules print them).
  *  @param {any} cfg  @param {any} [prev]  @param {{ month?: string, claimed?: string[] }} [ctx]
@@ -239,12 +277,17 @@ export function validateConfig(cfg, prev = null, ctx = {}) {
   const gifts = Array.isArray(cfg.gifts) ? cfg.gifts : [];
   const M = cfg.membership || {};
   if (!gifts.length || gifts.length > 16) err('There must be 1 to 16 gifts.');
-  const ids = new Set();
+  const ids = new Set(), prefixes = new Set();
   for (const g of gifts) {
     const who = g && str(g.name, 1, 80) ? g.name : `Gift ${g && g.id}`;
     if (!g || !/^[a-z0-9_]{2,24}$/.test(String(g.id))) { err(`${who}: id must be 2 to 24 lowercase letters, digits or _.`); continue; }
     if (ids.has(g.id)) err(`Two gifts share the id ${g.id}.`);
     ids.add(g.id);
+    if (!PREFIX.test(String(g.codePrefix))) err(`${who}: code prefix, 2 to 6 capital letters or digits starting with a letter, like SVC20.`);
+    else if (prefixes.has(g.codePrefix)) err(`Two promos share the code prefix ${g.codePrefix}. Each promo needs its own.`);
+    else prefixes.add(g.codePrefix);
+    if (!str(g.seraLine, 1, 80)) err(`${who}: Sera line, the discount the CSR applies in Sera, 1 to 80 characters.`);
+    if (g.expiresDays != null && !int(g.expiresDays, 1, 365)) err(`${who}: codes expire after 1 to 365 days. Leave it blank for the default.`);
     if (!str(g.name, 1, 60)) err(`${who}: name, 1 to 60 characters.`);
     if (!str(g.sub, 1, 140)) err(`${who}: description, 1 to 140 characters.`);
     if (!str(g.short, 1, 22)) err(`${who}: short name (shown in the dial's centre), 1 to 22 characters.`);
@@ -264,7 +307,11 @@ export function validateConfig(cfg, prev = null, ctx = {}) {
     for (const m of prevMonths) if (ctx.claimed?.includes(m) && !M.months.includes(m)) err(`Free-year months: ${monthName(m)}'s free year was won, so it stays on the schedule and in the official rules.`);
     for (const m of M.months) if (ctx.month && m < ctx.month && !prevMonths.includes(m)) err(`Free-year months: ${monthName(m)} has ended, so it can't be added.`);
   }
-  if (prev && Array.isArray(prev.gifts)) for (const g of prev.gifts) if (!ids.has(g.id)) err(`${g.name} was published before, so codes may point at it. Switch it off instead of deleting it.`);
+  if (prev && Array.isArray(prev.gifts)) for (const g of prev.gifts) {
+    if (!ids.has(g.id)) { err(`${g.name} was published before, so codes may point at it. Switch it off instead of deleting it.`); continue; }
+    const now = gifts.find((x) => x && x.id === g.id);
+    if (PREFIX.test(String(g.codePrefix)) && now.codePrefix !== g.codePrefix) err(`${g.name}: its codes start with ${g.codePrefix}, so the code prefix can't change.`);
+  }
 
   const on = gifts.filter((g) => g && g.active !== false);
   if (!on.some((g) => g.id !== M.giftId)) err('At least one gift besides the free year must be on.');

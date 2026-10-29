@@ -11,4 +11,4 @@ type Env = {
 declare const __BUILD__: { commit: string; builtAt: string | null };
 type Runtime<E> = import('@astrojs/cloudflare').Runtime<E>;
 /* `admin` is set by src/middleware.ts on admin pages and /api/admin/* once the session checks out. */
-declare namespace App { interface Locals extends Runtime<Env> { admin?: { email: string; name: string; uid: string } } }
+declare namespace App { interface Locals extends Runtime<Env> { admin?: { email: string; name: string; uid: string; role: import('./lib/admin/roles.ts').Role } } }

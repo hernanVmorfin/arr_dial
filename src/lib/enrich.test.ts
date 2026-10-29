@@ -71,8 +71,8 @@ test('summaries: home, what to ask about, earlier contact, the visit', () => {
   assert.equal(homeLine(HOME), 'built 1956 · 2-story brick · 1,380 sq ft · hot water steam · no central air · full basement, unfinished · Orland Twp, Cook County');
   assert.deepEqual(homeHints(HOME, OCT), ['no central air on record: ask about AC', 'boiler (hot water/steam) heat', '70-year-old home']);
   assert.deepEqual(homeHints({ centralAir: true, heating: 'Warm Air Furnace', yearBuilt: 2010 }, OCT), []);
-  assert.equal(priorLine({ checkedAt: '', leads: [{ id: '1', name: 'Maria · 14532 S Ravinia', created: '2026-10-02T15:00:00Z', status: 'New' }], klaviyo: { id: 'k', email: 'maria@x.com', since: '2025-03-04T00:00:00Z' }, atAddress: [{ code: 'ARR-7K3P', gift: 'svc20', status: 'redeemed', created_at: '' }] }),
-    'Monday lead Oct 2, 2026: Maria · 14532 S Ravinia (New) · Klaviyo profile since Mar 2025, maria@x.com · other dial codes at this home: ARR-7K3P (redeemed)');
+  assert.equal(priorLine({ checkedAt: '', leads: [{ id: '1', name: 'Maria · 14532 S Ravinia', created: '2026-10-02T15:00:00Z', status: 'New' }], klaviyo: { id: 'k', email: 'maria@x.com', since: '2025-03-04T00:00:00Z' }, atAddress: [{ code: 'SVC20-7K3PK', gift: 'svc20', status: 'redeemed', created_at: '' }] }),
+    'Monday lead Oct 2, 2026: Maria · 14532 S Ravinia (New) · Klaviyo profile since Mar 2025, maria@x.com · other dial codes at this home: SVC20-7K3PK (redeemed)');
   assert.equal(priorLine({ checkedAt: '' }), '');
   assert.equal(visitLine({ visits: 3, firstSeen: '2026-10-02T15:00:00Z', firstReferrer: 'facebook.com/', firstAds: { fbclid: 'x' }, referrer: 'google.com/', ads: { utm_source: 'google', utm_medium: 'cpc', gclid: 'g' }, landing: '/furnace-repair', pageViews: 4, pages: ['/furnace-repair', '/reviews'], device: 'mobile', geo: { city: 'Orland Park', zip: '60462', inArea: true } }),
     'visit 3 since Oct 2, 2026 · first came from facebook.com/, Meta ad · this visit from google.com/, google/cpc, Google ad · landed on /furnace-repair · 4 pages (/furnace-repair, /reviews) · mobile · near Orland Park 60462 (in area)');
@@ -152,7 +152,7 @@ test('enrichment after "book faster" finds the home without asking Monday or Kla
 
 test('Monday notes and Klaviyo payloads carry the home and the visit; _kx joins the Klaviyo profile', () => {
   const e: any = {
-    id: 'e', code: 'ARR-7K3P', turn_id: 't', phone: '7085550142', gift: 'svc20', mem_month: null, first_name: 'Maria', address: '14532 S Ravinia Ave', zip: '60462',
+    id: 'e', code: 'SVC20-7K3PK', turn_id: 't', phone: '7085550142', gift: 'svc20', mem_month: null, first_name: 'Maria', address: '14532 S Ravinia Ave', zip: '60462',
     household_key: null, sms_marketing: false, utm: null, page: null, ip: null, monday_item_id: null, created_at: OCT.toISOString(),
     expires_at: '2026-11-15T15:00:00.000Z', redeemed_at: null, redeemed_note: null, home: HOME,
     prior: { checkedAt: '', klaviyo: { id: 'k', since: '2025-03-04T00:00:00Z' } },

@@ -10,9 +10,10 @@ In order. Each step is safe to stop after.
    `supabase/migrations/20261016_comfort_dial.sql`, then `20261019_comfort_dial_admin.sql` (the admin's tables and the
    results function), then `20261020_comfort_dial_context.sql` (visit, home and earlier-contact columns, and
    `comfort_dial_home`, which reads the pricing app's county tables), then `20261021_comfort_dial_oauth.sql` (where
-   the Podium token is kept, so every isolate shares it). They only create `comfort_dial_*` objects.
-   (The first three were applied on Oct 19, 2026 through the Supabase connector; the OAuth one is newer. Texts go
-   out without it, but each isolate then refreshes the Podium token for itself.) If an empty `dial_entries`
+   the Podium token is kept, so every isolate shares it), then `20261021_comfort_dial_roles.sql` (CSR logins). They
+   only create `comfort_dial_*` objects. (The first three were applied on Oct 19, 2026 through the Supabase
+   connector; the OAuth and roles ones are newer. Texts go out without the OAuth one, but each isolate then refreshes
+   the Podium token for itself. Without the roles one everyone on the team is an admin and a CSR can't be added.) If an empty `dial_entries`
    table exists from the earlier PR #10 migration, it can be dropped; nothing reads it.
    **First admin**: Authentication → Users → Add user → email + password, auto-confirm. Then in the SQL editor:
    `insert into public.comfort_dial_admins (email, name) values ('jason@arrhvac.com', 'Jason');`. Everyone after
@@ -55,8 +56,9 @@ In order. Each step is safe to stop after.
    - Board → Integrate → Webhooks → "When a column changes, send a webhook" → column Code status → URL
      `https://www.alwaysreadyrepair.com/dial/api/redeemed?key=<MONDAY_WEBHOOK_SECRET>`. Monday sends a challenge
      first; the route answers it.
-6. **Sera**: one discount line per gift (`Comfort Dial $20`, `$50 ducts`, `$50 water heater`, `Free service call`,
-   `Free year membership`) so redemptions show up in revenue reports.
+6. **Sera**: one discount line per gift, named exactly as that promo's **Sera line** in Promos & odds (`Comfort Dial
+   $20`, `Comfort Dial $50 ducts`, ...), so redemptions show up in revenue reports. The Sera line is on every Monday
+   item and every code in the admin, so the CSR never has to look it up.
 7. **Webflow embed** (the step that reaches visitors): Site settings → Backups → manual backup, then Site settings →
    Custom code → Footer code:
 
@@ -127,7 +129,14 @@ admin's; `force: {...}` overrides the admin (the QA page at `/dial/` uses it).
 
 ## Operations
 
+- **Codes** look like `SVC20-7K3PK`: the promo's code prefix (set in Promos & odds, fixed once published, so a code
+  names its promo), four random characters, and a check character. One misheard or mistyped character, or two
+  swapped, fails the check, and the admin says "one character is off" instead of finding nothing. Codes from before
+  the prefixes (`ARR-7K3P`) still work. Each promo can also set how long its codes last (blank: Settings' default).
 - **Find a code**: admin → Codes (code, phone, name or street), or Monday (the code is in the item name).
+- **CSR logins**: Team → Add someone → Role **CSR**. A CSR signs in to the same `/dial/admin` and sees only Codes:
+  find a code, mark it redeemed (not once it has expired), text it again. No void, extend, restore or CSV export, and
+  the server refuses those calls too. Change someone's role from the Team list; it takes effect on their next click.
 - **Redeem**: CSR sets Code status → Redeemed (see CSR-GUIDE.md). The webhook fills `redeemed_at`. If the webhook is
   down, admin → Codes → Mark redeemed (it also sets Monday's Code status).
 - **Void, restore, extend, text again**: admin → Codes. Void sets Monday's Code status to `Void` (Monday adds the

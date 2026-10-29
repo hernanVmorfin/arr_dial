@@ -3,6 +3,8 @@
  *   memoryDb:   tests and local dev with DIAL_MEMORY_DB=1 (lib/db-memory.ts), same semantics, no network
  * Every rule that must hold under races (one free year per month, one gift per phone) is a constraint or a
  * compare-and-set in the Supabase implementation, mirrored here so the service logic is tested against it. */
+import { checkCode, readCode } from './rules.js';
+import type { Role } from './admin/roles.ts';
 
 /* config_version: the published config the gift was picked under (0 = the built-in data/dial.json). Left out of the
  * insert while it is 0, so the dial keeps working before the admin migration has run. */
@@ -93,7 +95,8 @@ export interface DialDb extends TokenStore {
 
 /** One published config. Versions only ever grow; a rollback publishes an old config again as a new version. */
 export type ConfigVersion = { version: number; config: unknown; note: string | null; created_by: string; created_at: string };
-export type Admin = { email: string; name: string; created_at: string; created_by: string | null };
+/** role: absent until supabase/migrations/20261021_comfort_dial_roles.sql has run, which reads as admin. */
+export type Admin = { email: string; name: string; role?: Role | null; created_at: string; created_by: string | null };
 export type AuditRow = {
   at: string; actor: string; action: string; target: string | null; detail: Record<string, unknown> | null; ip: string | null;
 };
@@ -124,6 +127,7 @@ export interface AdminDb {
   admins(): Promise<Admin[]>;
   addAdmin(a: Admin): Promise<'ok' | 'exists'>;
   removeAdmin(email: string): Promise<void>;
+  setAdminRole(email: string, role: Role): Promise<void>;
 
   audit(row: AuditRow): Promise<void>;
   auditCount(action: string, since: Date, by: { ip?: string; target?: string }): Promise<number>;
@@ -144,19 +148,24 @@ export interface AdminDb {
   membershipEntries(): Promise<Entry[]>;
 }
 
-/** What the code-lookup box was given: a code (with or without ARR-), part of a phone number, or a name or street. */
-export function parseSearch(raw: string | undefined): { code: string } | { phone: string } | { text: string } | null {
+/** What the code-lookup box was given: a code (SVC20-7K3PK, svc20 7k3pk, ARR-7K3P), part of a phone number, or a name
+ *  or street. A code whose check fails is searched as text too, and `typo` carries it so the admin can say a
+ *  character is off. The random part alone (7K3PK) is a text search, which finds it inside the code. */
+export function parseSearch(raw: string | undefined): { code: string } | { phone: string } | { text: string; typo?: string } | null {
   const q = String(raw || '').trim().slice(0, 60);
   if (!q) return null;
-  // ARR-7K3P, ARR7K3P, or a bare 7K3P (a bare one needs a letter and a digit, so "PARK" stays a street search)
-  const c = /^ARR-?([ACDEFGHJKMNPQRTUVWXY34679]{4})$/i.exec(q) || (/\d/.test(q) && /[a-z]/i.test(q) ? /^([ACDEFGHJKMNPQRTUVWXY34679]{4})$/i.exec(q) : null);
-  if (c) return { code: `ARR-${c[1].toUpperCase()}` };
+  const c = readCode(q);
+  if (c && checkCode(c) === 'ok') return { code: c };
+  // a bare 7K3P from before promo prefixes (it needs a letter and a digit, so "PARK" stays a street search)
+  const old = /\d/.test(q) && /[a-z]/i.test(q) ? /^([ACDEFGHJKMNPQRTUVWXY34679]{4})$/i.exec(q) : null;
+  if (old) return { code: `ARR-${old[1].toUpperCase()}` };
   if (!/[a-z]/i.test(q)) {
     const d = q.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
     if (d.length >= 4) return { phone: d };
   }
   const text = q.replace(/[^A-Za-z0-9 .'-]/g, ' ').replace(/\s+/g, ' ').trim();
-  return text.length >= 2 ? { text } : null;
+  if (text.length < 2) return null;
+  return c ? { text, typo: c } : { text };
 }
 
 export const codeStatus = (e: Entry, now: Date): CodeStatus =>

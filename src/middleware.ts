@@ -1,11 +1,13 @@
 /* Guards the admin: <base>admin/* pages and <base>api/admin/* calls. Everything else passes straight through.
  * A request gets in with a valid session cookie for someone still on comfort_dial_admins (checked every time, so
  * removing an admin locks them out at once). The sign-in page and the sign-in call are the only open doors.
- * Pages without a session go to the sign-in page; API calls get 401. Writes must come from the admin's own pages. */
+ * Pages without a session go to the sign-in page; API calls get 401. Writes must come from the admin's own pages.
+ * A CSR (comfort_dial_admins.role, read on every request) gets only the Codes tab's calls (lib/admin/roles.ts). */
 import { defineMiddleware } from 'astro:middleware';
 import { dbFor, envOf } from './lib/runtime.ts';
 import { COOKIE, cookieValue, readSession, sessionCookie, sessionSecret } from './lib/admin/session.ts';
 import { adminJson, fromAdminPage, isLocal, SECURITY_HEADERS } from './lib/admin/http.ts';
+import { mayCall, roleOf } from './lib/admin/roles.ts';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 
@@ -31,13 +33,17 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
     try { admin = await db.admin(s.email); }
     catch (e) { console.error('dial admin check', e); return adminJson({ error: 'Couldn\'t reach the database. Try again in a minute.' }, 502); }
   }
-  if (admin && s) ctx.locals.admin = { email: admin.email, name: admin.name, uid: s.uid };
+  if (admin && s) ctx.locals.admin = { email: admin.email, name: admin.name, uid: s.uid, role: roleOf(admin.role) };
 
   if (!ctx.locals.admin && !open) {
     const clear: Record<string, string> = s ? { 'set-cookie': sessionCookie(null, BASE, !isLocal(ctx.url)) } : {};
     if (api) return adminJson({ error: 'Sign in again.', reason: 'signed_out' }, 401, clear);
     const back = path === `${BASE}admin` || path === `${BASE}admin/` ? '' : `?next=${encodeURIComponent(path)}`;
     return new Response(null, { status: 302, headers: { location: `${BASE}admin/login${back}`, ...SECURITY_HEADERS, ...clear } });
+  }
+
+  if (api && !open && ctx.locals.admin && !mayCall(ctx.locals.admin.role, ctx.request.method, path.slice(`${BASE}api/admin/`.length))) {
+    return adminJson({ error: 'Your account works codes only. Ask an admin for this.' }, 403);
   }
 
   const res = await next();

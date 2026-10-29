@@ -26,6 +26,7 @@ export function pasteBlock(e: Entry, gift: Gift, cfg: Cfg) {
   return [
     `COMFORT DIAL ${e.code} · won ${e.created_at}`,
     `Gift: ${gift.name} (${gift.sub})`,
+    gift.seraLine ? `Apply in Sera: ${gift.seraLine}` : null,
     `Phone: ${fmtPhone(e.phone)}${e.first_name ? ` · ${e.first_name}` : ''}`,
     `Address: ${e.address ? `${e.address}, ${e.zip}${isMem ? ' (matched to county record; the free year is tied to this home)' : ''}` : 'not given yet'}`,
     `Expires: ${chicagoDate(e.expires_at)}`,

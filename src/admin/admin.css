@@ -153,6 +153,7 @@ input[readonly] { background: var(--panel); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 thead th { background: var(--arr-navy); color: var(--arr-white); font-family: var(--f-sub); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; font-size: 12px; text-align: left; padding: 10px 12px; white-space: nowrap; }
 td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+td select { width: auto; min-width: 96px; padding: 6px 8px; font-size: 14px; }
 tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--panel) 45%, transparent); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.click { cursor: pointer; }

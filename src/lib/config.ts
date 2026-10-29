@@ -7,6 +7,7 @@
  * be read, the last good config is kept, and with none yet, the built-in one. */
 import type { AdminDb } from './db.ts';
 import type { Cfg } from './dial.ts';
+import { expiryDays } from './rules.js';
 
 const TTL_MS = 15_000;
 let cached: { cfg: Cfg; at: number } | null = null;
@@ -28,13 +29,17 @@ export async function liveConfig(db: Pick<AdminDb, 'latestConfig'> | null, built
 
 export function forgetConfig() { cached = null; }
 
-/** What the popup needs, sent with /api/status. Nothing in the config is secret, but switched-off gifts stay home. */
+/** What the popup needs, sent with /api/status. Nothing in the config is secret, but switched-off gifts, code
+ *  prefixes and Sera lines stay home. Each gift carries how many days its code lasts. */
 export function publicConfig(cfg: Cfg) {
   return {
     version: cfg.version ?? 0,
     phone: cfg.phone, bookUrl: cfg.bookUrl, expiresDays: cfg.expiresDays, holdMinutes: cfg.holdMinutes,
     membershipGiftId: cfg.membership.giftId,
-    gifts: cfg.gifts.filter((g) => g.active !== false).map(({ id, short, name, sub, weight, value, fill, ink }) => ({ id, short, name, sub, weight, value, fill, ink })),
+    gifts: cfg.gifts.filter((g) => g.active !== false).map((g) => {
+      const { id, short, name, sub, weight, value, fill, ink } = g;
+      return { id, short, name, sub, weight, value, fill, ink, expiresDays: expiryDays(cfg, g) };
+    }),
     zones: cfg.zones,
     popup: cfg.popup
   };
