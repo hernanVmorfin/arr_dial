@@ -810,6 +810,12 @@ function mount() {
   const st = document.createElement('style'); st.id = 'arrd-css'; st.textContent = CSS; document.head.appendChild(st);
   root = document.createElement('div'); root.className = 'arrd-root'; root.hidden = true; root.innerHTML = MARKUP;
   document.body.appendChild(root);
+  /* The site's accessibility widget (Sienna) writes an inline font-size on every p, a and span on the page, floored to
+   * whole pixels and measured whenever it runs, often while the popup is hidden: that froze the thermostat's text at
+   * the wrong size (window-sized, or a pixel short). It tags what it touched with data-asw-org-font-size; the popup
+   * sizes its own text, so those inline sizes come straight off again. */
+  const unpin = (n) => { if (n.hasAttribute && n.hasAttribute('data-asw-org-font-size')) { n.style.removeProperty('font-size'); n.removeAttribute('data-asw-org-font-size'); } };
+  new MutationObserver((list) => list.forEach((m) => unpin(m.target))).observe(root, { subtree: true, attributes: true, attributeFilter: ['style'] });
   tab = document.createElement('button'); tab.type = 'button'; tab.className = 'arrd-tab'; tab.hidden = true;
   tab.addEventListener('click', () => open('tab'));
   document.body.appendChild(tab);
