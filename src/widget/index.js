@@ -147,13 +147,14 @@ const PATHS = {
 const icon = (n, cls = '') => `<svg class="arrd-i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${PATHS[n] || PATHS.cloud}</svg>`;
 
 /* ---------------- styles ---------------- */
-/* The sheet is a warm wall and the thermostat hangs on it. Text on the glass is sized in cqw (1% of the glass width),
- * so the screen reads the same at 250 px on a phone as at 350 px on a laptop. */
+/* The sheet is a warm wall and the thermostat hangs on it. Text on the glass is sized in --u (1% of the glass width),
+ * so the screen reads the same at 250 px on a phone as at 420 px on a laptop. */
 const CSS = `
 html.arrd-open{overflow:hidden}
 html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibility:hidden!important}
 .arrd-root,.arrd-tab{--blue:#084e91;--red:#ee292f;--lb:#03bce6;--white:#f9f7f8;--black:#221f20;--navy:#14284e;--gray:#dee5ee;--yellow:#ffcc04;--muted:#5c6672;--soft:#a9bcd6;--line:#c9d4e2;
   --head:"Archivo","Helvetica Neue",Arial,sans-serif;--sub:"Oswald","Barlow Condensed","Arial Narrow",sans-serif;--body:"Inter",-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.arrd-root,.arrd-tab{font-style:normal;font-variant:normal;font-stretch:normal;font-kerning:auto}
 .arrd-root,.arrd-root *,.arrd-tab{box-sizing:border-box}
 .arrd-root[hidden],.arrd-root [hidden],.arrd-tab[hidden]{display:none!important}
 .arrd-root{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(20,40,78,.55);transition:background-color .3s;font-family:var(--body);color:var(--black);line-height:1.5;-webkit-font-smoothing:antialiased;text-align:left}
@@ -166,9 +167,10 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
   .arrd-sheet{max-width:none;border-radius:18px 18px 0 0;max-height:92vh;padding:10px 18px calc(18px + env(safe-area-inset-bottom,0px));animation:arrd-up .32s cubic-bezier(.2,.8,.2,1)}
 }
 .arrd-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
-.arrd-brand{font:500 12.5px/1.3 var(--sub);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.arrd-brand{font-family:var(--sub);font-weight:500;font-size:12.5px;line-height:1.3;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .arrd-brand b{font-weight:600;color:var(--navy)}
-.arrd-x{width:40px;height:40px;border-radius:50%;border:1px solid rgba(20,40,78,.25);background:transparent;color:var(--navy);font:400 24px/1 var(--body);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
+.arrd-x{width:40px;height:40px;border-radius:50%;border:1px solid rgba(20,40,78,.25);background:transparent;color:var(--navy);font-family:var(--body);font-weight:400;font-size:24px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
+.arrd-sheet:focus{outline:none}
 .arrd-root button:focus-visible,.arrd-root a:focus-visible,.arrd-root input:focus-visible,.arrd-tab:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
 .arrd-glass button:focus-visible,.arrd-glass a:focus-visible{outline-color:var(--yellow);outline-offset:2px}
 .arrd-sec{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:4px}
@@ -185,18 +187,22 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-bare .arrd-head{justify-content:flex-end;min-height:0;margin:0 0 8px}
 .arrd-bare .arrd-brand{display:none}
 .arrd-bare .arrd-x{background:var(--white);border-color:transparent;box-shadow:0 6px 16px -6px rgba(0,0,0,.6)}
-.arrd-bare .arrd-dev{width:min(420px,86vw,60vh);margin:0 auto}
+.arrd-bare .arrd-dev{--dw:min(420px,86vw,60vh);margin:0 auto}
 .arrd-bare [data-arrd="play"]{position:relative;margin-top:12px;gap:8px}
 .arrd-bare .arrd-no{color:var(--white);opacity:.9}
-.arrd-scar{font:600 14px/1.35 var(--sub);text-transform:uppercase;letter-spacing:.08em;color:var(--yellow);text-shadow:0 1px 3px rgba(0,0,0,.55);text-align:center;text-wrap:balance}
+.arrd-scar{font-family:var(--sub);font-weight:600;font-size:14px;line-height:1.35;text-transform:uppercase;letter-spacing:.08em;color:var(--yellow);text-shadow:0 1px 3px rgba(0,0,0,.55);text-align:center;text-wrap:balance}
 .arrd-scar:empty{display:none}
 .arrd-bare .arrd-err{color:#fff;background:var(--red);border-radius:8px;padding:8px 12px;font-size:13.5px;text-align:center;max-width:min(420px,86vw)}
 .arrd-bare .arrd-odds{position:absolute;z-index:3;left:0;right:0;bottom:calc(100% + 10px);max-height:min(60vh,390px);overflow-y:auto;background:var(--white);border:0;border-radius:14px;padding:12px 14px;box-shadow:0 18px 40px -12px rgba(0,0,0,.55)}
 
 /* ---- the thermostat ---- */
-.arrd-dev{position:relative;width:min(350px,84vw,42vh);aspect-ratio:1/1;margin:6px auto 8px;border-radius:22%;padding:1%;background:linear-gradient(135deg,#f9f7f8 0%,#a9bcd6 42%,#5c6672 100%);box-shadow:0 22px 40px -14px rgba(20,40,78,.6),0 6px 12px -4px rgba(20,40,78,.35);transition:width .35s ease}
-.arrd-dev.is-small{width:min(250px,62vw,30vh)}
-.arrd-glass{position:relative;width:100%;height:100%;border-radius:21.4%;background:#221f20;overflow:hidden;container-type:inline-size;color:var(--white);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+/* Everything inside the thermostat scales with it through --u, 1% of the glass (the device less its 1% bezel), worked
+ * out from the viewport like the device's own width. No container units and no font shorthand with a variable in it:
+ * on the live site that text came up sized to the browser window (or 0px) instead of to the thermostat, while plain
+ * font-size rules were fine. Every font is set with longhands for the same reason. */
+.arrd-dev{--dw:min(350px,84vw,42vh);--u:calc(var(--dw)*.0098);position:relative;width:var(--dw);aspect-ratio:1/1;margin:6px auto 8px;border-radius:22%;padding:1%;background:linear-gradient(135deg,#f9f7f8 0%,#a9bcd6 42%,#5c6672 100%);box-shadow:0 22px 40px -14px rgba(20,40,78,.6),0 6px 12px -4px rgba(20,40,78,.35);transition:width .35s ease}
+.arrd-dev.is-small{--dw:min(250px,62vw,30vh)}
+.arrd-glass{position:relative;width:100%;height:100%;border-radius:21.4%;background:#221f20;overflow:hidden;color:var(--white);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .arrd-glass::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.1) 0%,rgba(255,255,255,0) 45%),linear-gradient(180deg,rgba(249,247,248,.04) 0%,rgba(34,31,32,0) 50%,rgba(0,0,0,.28) 100%)}
 .arrd-i{display:block;width:100%;height:100%}
 .arrd-face{position:absolute;inset:0;width:100%;height:100%;display:block}
@@ -208,90 +214,90 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 .arrd-ly{position:absolute;opacity:0;visibility:hidden;transition:opacity .35s,visibility 0s .35s}
 .arrd-dev[data-state="wake"] .arrd-ly[data-show~="wake"],.arrd-dev[data-state="ready"] .arrd-ly[data-show~="ready"],.arrd-dev[data-state="heating"] .arrd-ly[data-show~="heating"],
 .arrd-dev[data-state="won"] .arrd-ly[data-show~="won"],.arrd-dev[data-state="code"] .arrd-ly[data-show~="code"]{opacity:1;visibility:visible;transition:opacity .35s}
-.arrd-sb{position:absolute;z-index:2;top:5%;left:0;right:0;height:6%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:4cqw}
-.arrd-sb-l{justify-self:end;display:flex;gap:2.6cqw;align-items:center}
-.arrd-sb-l .arrd-i{width:3.6cqw;height:3.6cqw}
+.arrd-sb{position:absolute;z-index:2;top:5%;left:0;right:0;height:6%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:calc(var(--u)*4)}
+.arrd-sb-l{justify-self:end;display:flex;gap:calc(var(--u)*2.6);align-items:center}
+.arrd-sb-l .arrd-i{width:calc(var(--u)*3.6);height:calc(var(--u)*3.6)}
 .arrd-sb-l .arrd-sb-heat{color:var(--red)}
 .arrd-sb-l .arrd-sb-cool{color:var(--lb);display:none}
 .arrd-dev[data-state="heating"][data-mode="cool"] .arrd-sb-heat{display:none}
 .arrd-dev[data-state="heating"][data-mode="cool"] .arrd-sb-cool{display:block}
-.arrd-pill{display:inline-flex;align-items:center;gap:1.3cqw;height:5.2cqw;padding:0 3.2cqw;border-radius:99px;background:var(--navy);color:var(--white);font:600 11px/1 var(--body);font-size:3cqw;font-variant-numeric:tabular-nums;white-space:nowrap}
-.arrd-pill .arrd-i{width:2.8cqw;height:2.8cqw}
+.arrd-pill{display:inline-flex;align-items:center;gap:calc(var(--u)*1.3);height:calc(var(--u)*5.2);padding:0 calc(var(--u)*3.2);border-radius:99px;background:var(--navy);color:var(--white);font-family:var(--body);font-weight:600;line-height:1;font-size:calc(var(--u)*3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.arrd-pill .arrd-i{width:calc(var(--u)*2.8);height:calc(var(--u)*2.8)}
 .arrd-pill.sub,.arrd-pill.heat,.arrd-pill.cool,.arrd-pill.hold{font-family:var(--sub);letter-spacing:.1em;text-transform:uppercase}
 .arrd-pill.heat{background:var(--red);color:#fff}
 .arrd-pill.cool{background:var(--blue);color:#fff}
 .arrd-pill.hold{background:var(--yellow);color:var(--navy)}
-.arrd-mute{justify-self:start;width:9cqw;height:9cqw;margin:-2cqw 0 -2cqw -2.2cqw;padding:2.4cqw;border:0;border-radius:50%;background:none;color:var(--white);cursor:pointer}
-.arrd-side{z-index:2;top:43%;width:12%;display:flex;flex-direction:column;align-items:center;gap:2.4cqw;text-decoration:none}
-.arrd-side-c{width:12cqw;height:12cqw;border-radius:50%;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;transition:background .15s}
-.arrd-side-c .arrd-i{width:4.2cqw;height:4.2cqw}
+.arrd-mute{justify-self:start;width:calc(var(--u)*9);height:calc(var(--u)*9);margin:calc(var(--u)*-2) 0 calc(var(--u)*-2) calc(var(--u)*-2.2);padding:calc(var(--u)*2.4);border:0;border-radius:50%;background:none;color:var(--white);cursor:pointer}
+.arrd-side{z-index:2;top:43%;width:12%;display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*2.4);text-decoration:none}
+.arrd-side-c{width:calc(var(--u)*12);height:calc(var(--u)*12);border-radius:50%;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;transition:background .15s}
+.arrd-side-c .arrd-i{width:calc(var(--u)*4.2);height:calc(var(--u)*4.2)}
 .arrd-side:hover .arrd-side-c{background:var(--blue)}
 .arrd-hubbtn{z-index:2;left:35%;top:34%;width:30%;height:30%;border:0;border-radius:50%;padding:0;margin:0;background:none;cursor:pointer}
-.arrd-side-l{font:600 2.5cqw/1 var(--sub);letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.arrd-side-l{font-family:var(--sub);font-weight:600;font-size:calc(var(--u)*2.5);line-height:1;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
 .arrd-dev.is-small .arrd-side{display:none}
 .arrd-wx{left:6%;right:6%;top:74.5%;text-align:center;pointer-events:none}
-.arrd-wx1{font:400 11px/1.35 var(--body);font-size:2.9cqw;color:var(--soft);display:flex;justify-content:center;align-items:center;gap:1.6cqw}
-.arrd-wx1 .arrd-i{width:4.2cqw;height:4.2cqw;color:var(--white)}
-.arrd-wx1 b{font-weight:600;font-size:3.6cqw;color:var(--white)}
-.arrd-wx2{font:400 10px/1.4 var(--body);font-size:2.75cqw;color:var(--soft);margin-top:1cqw}
+.arrd-wx1{font-family:var(--body);font-weight:400;line-height:1.35;font-size:calc(var(--u)*2.9);color:var(--soft);display:flex;justify-content:center;align-items:center;gap:calc(var(--u)*1.6)}
+.arrd-wx1 .arrd-i{width:calc(var(--u)*4.2);height:calc(var(--u)*4.2);color:var(--white)}
+.arrd-wx1 b{font-weight:600;font-size:calc(var(--u)*3.6);color:var(--white)}
+.arrd-wx2{font-family:var(--body);font-weight:400;line-height:1.4;font-size:calc(var(--u)*2.75);color:var(--soft);margin-top:calc(var(--u)*1)}
 .arrd-logo{position:absolute;left:41.5%;top:89%;width:17%;height:auto;opacity:.8;pointer-events:none}
 .arrd-wake{inset:14% 6% 14.5%;display:flex;flex-direction:column;align-items:center;text-align:center}
-.arrd-wk-time{font:300 22cqw/1 var(--head);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.arrd-wk-time small{font:600 3.8cqw/1 var(--sub);letter-spacing:.06em;color:var(--soft);vertical-align:top;margin-left:1.6cqw}
-.arrd-wk-date{font:500 3.5cqw/1.3 var(--body);color:var(--soft);margin:2.4cqw 0 4.6cqw!important}
-.arrd-tiles{display:flex;gap:2.6cqw;justify-content:center}
-.arrd-tile{width:26cqw;padding:3cqw 0 2.6cqw;border-radius:4.6cqw;background:rgba(249,247,248,.07);display:flex;flex-direction:column;align-items:center;gap:1.4cqw}
-.arrd-tile .arrd-i{width:4.3cqw;height:4.3cqw}
-.arrd-tile b{font:800 5.8cqw/1 var(--head);font-stretch:112%}
-.arrd-tile span{font:600 2.25cqw/1 var(--sub);letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.arrd-wk-time{font-family:var(--head);font-weight:300;font-size:calc(var(--u)*22);line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.arrd-wk-time small{font-family:var(--sub);font-weight:600;font-size:calc(var(--u)*3.8);line-height:1;letter-spacing:.06em;color:var(--soft);vertical-align:top;margin-left:calc(var(--u)*1.6)}
+.arrd-wk-date{font-family:var(--body);font-weight:500;font-size:calc(var(--u)*3.5);line-height:1.3;color:var(--soft);margin:calc(var(--u)*2.4) 0 calc(var(--u)*4.6)!important}
+.arrd-tiles{display:flex;gap:calc(var(--u)*2.6);justify-content:center}
+.arrd-tile{width:calc(var(--u)*26);padding:calc(var(--u)*3) 0 calc(var(--u)*2.6);border-radius:calc(var(--u)*4.6);background:rgba(249,247,248,.07);display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*1.4)}
+.arrd-tile .arrd-i{width:calc(var(--u)*4.3);height:calc(var(--u)*4.3)}
+.arrd-tile b{font-family:var(--head);font-weight:800;font-size:calc(var(--u)*5.8);line-height:1;font-stretch:112%}
+.arrd-tile span{font-family:var(--sub);font-weight:600;font-size:calc(var(--u)*2.25);line-height:1;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
 .arrd-tile.drop .arrd-i{color:var(--lb)}
 .arrd-tile.heat .arrd-i{color:var(--red)}
-.arrd-wk-tap{margin-top:auto!important;border:1.5px solid var(--yellow);color:var(--yellow);border-radius:99px;padding:1.8cqw 5cqw;font:600 2.75cqw/1 var(--sub);letter-spacing:.12em;text-transform:uppercase}
+.arrd-wk-tap{margin-top:auto!important;border:1.5px solid var(--yellow);color:var(--yellow);border-radius:99px;padding:calc(var(--u)*1.8) calc(var(--u)*5);font-family:var(--sub);font-weight:600;font-size:calc(var(--u)*2.75);line-height:1;letter-spacing:.12em;text-transform:uppercase}
 .arrd-wonly{left:8%;right:8%;top:76%;text-align:center;pointer-events:none}
-.arrd-wonly .k{font:600 3.4cqw/1 var(--sub);letter-spacing:.2em;text-transform:uppercase;color:var(--yellow)}
-.arrd-wonly .s{font:400 2.9cqw/1.35 var(--body);color:var(--soft);margin-top:1.8cqw}
-.arrd-codely{inset:13% 8% 14%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2.4cqw}
-.arrd-codely .t{font:600 4cqw/1 var(--body)}
-.arrd-codely .panel{width:100%;background:var(--navy);border:1.5px solid rgba(3,188,230,.35);border-radius:5cqw;padding:4cqw 3cqw 3.4cqw;margin-top:1.4cqw}
-.arrd-codely .l{font:600 2.6cqw/1 var(--sub);letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
-.arrd-codely .c{font:900 10cqw/1.05 var(--head);white-space:nowrap;font-stretch:112%;color:var(--lb);letter-spacing:.02em;margin:2.2cqw 0 1.6cqw!important;-webkit-user-select:all;user-select:all;cursor:text}
-.arrd-codely .g{font:600 4cqw/1.2 var(--sub);letter-spacing:.08em;text-transform:uppercase;margin-top:2cqw!important}
-.arrd-codely .d{font:400 3cqw/1.3 var(--body);color:var(--soft)}
+.arrd-wonly .k{font-family:var(--sub);font-weight:600;font-size:calc(var(--u)*3.4);line-height:1;letter-spacing:.2em;text-transform:uppercase;color:var(--yellow)}
+.arrd-wonly .s{font-family:var(--body);font-weight:400;font-size:calc(var(--u)*2.9);line-height:1.35;color:var(--soft);margin-top:calc(var(--u)*1.8)}
+.arrd-codely{inset:13% 8% 14%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:calc(var(--u)*2.4)}
+.arrd-codely .t{font-family:var(--body);font-weight:600;font-size:calc(var(--u)*4);line-height:1}
+.arrd-codely .panel{width:100%;background:var(--navy);border:1.5px solid rgba(3,188,230,.35);border-radius:calc(var(--u)*5);padding:calc(var(--u)*4) calc(var(--u)*3) calc(var(--u)*3.4);margin-top:calc(var(--u)*1.4)}
+.arrd-codely .l{font-family:var(--sub);font-weight:600;font-size:calc(var(--u)*2.6);line-height:1;letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
+.arrd-codely .c{font-family:var(--head);font-weight:900;font-size:calc(var(--u)*10);line-height:1.05;white-space:nowrap;font-stretch:112%;color:var(--lb);letter-spacing:.02em;margin:calc(var(--u)*2.2) 0 calc(var(--u)*1.6)!important;-webkit-user-select:all;user-select:all;cursor:text}
+.arrd-codely .g{font-family:var(--sub);font-weight:600;font-size:calc(var(--u)*4);line-height:1.2;letter-spacing:.08em;text-transform:uppercase;margin-top:calc(var(--u)*2)!important}
+.arrd-codely .d{font-family:var(--body);font-weight:400;font-size:calc(var(--u)*3);line-height:1.3;color:var(--soft)}
 
 /* ---- below the thermostat ---- */
-.arrd-btn{display:flex;justify-content:center;align-items:center;font:600 17px/1 var(--sub);text-transform:uppercase;letter-spacing:.1em;padding:17px 22px;border-radius:10px;text-decoration:none;background:var(--red);color:#fff;border:2px solid var(--red);cursor:pointer;width:100%;margin:0}
+.arrd-btn{display:flex;justify-content:center;align-items:center;font-family:var(--sub);font-weight:600;font-size:17px;line-height:1;text-transform:uppercase;letter-spacing:.1em;padding:17px 22px;border-radius:10px;text-decoration:none;background:var(--red);color:#fff;border:2px solid var(--red);cursor:pointer;width:100%;margin:0}
 .arrd-btn:hover{filter:brightness(1.06)}
 .arrd-btn[disabled]{opacity:.6;cursor:wait}
 .arrd-btn.ghost{background:transparent;color:var(--navy);border-color:rgba(20,40,78,.45)}
-.arrd-no{background:none;border:0;color:var(--muted);font:500 14px/1.4 var(--body);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px;align-self:center}
-.arrd-link{background:none;border:0;color:var(--muted);font:400 12.5px/1.4 var(--body);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:2px;align-self:center}
+.arrd-no{background:none;border:0;color:var(--muted);font-family:var(--body);font-weight:500;font-size:14px;line-height:1.4;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px;align-self:center}
+.arrd-link{background:none;border:0;color:var(--muted);font-family:var(--body);font-weight:400;font-size:12.5px;line-height:1.4;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:2px;align-self:center}
 .arrd-odds{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;width:100%;text-align:left}
 .arrd-odds div{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-variant-numeric:tabular-nums;color:var(--black)}
 .arrd-odds i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:-1px;box-shadow:inset 0 0 0 1px rgba(20,40,78,.2)}
 .arrd-odds .off{text-decoration:line-through;opacity:.6}
 .arrd-odds a{color:var(--blue)}
-.arrd-won{font:600 14px/1.3 var(--sub);text-transform:uppercase;letter-spacing:.1em;color:var(--red)}
-.arrd-gift{font:900 clamp(24px,6.6vw,32px)/1.02 var(--head);font-stretch:125%;text-transform:uppercase;letter-spacing:-.02em;color:var(--blue);text-wrap:balance}
+.arrd-won{font-family:var(--sub);font-weight:600;font-size:14px;line-height:1.3;text-transform:uppercase;letter-spacing:.1em;color:var(--red)}
+.arrd-gift{font-family:var(--head);font-weight:900;font-size:clamp(24px,6.6vw,32px);line-height:1.02;font-stretch:125%;text-transform:uppercase;letter-spacing:-.02em;color:var(--blue);text-wrap:balance}
 .arrd-sub{color:var(--muted);font-size:15px}
-.arrd-hold{font:500 14px/1.4 var(--sub);text-transform:uppercase;letter-spacing:.07em;color:var(--navy)}
+.arrd-hold{font-family:var(--sub);font-weight:500;font-size:14px;line-height:1.4;text-transform:uppercase;letter-spacing:.07em;color:var(--navy)}
 .arrd-hold b{color:var(--red);font-variant-numeric:tabular-nums;font-weight:600}
 .arrd-form{display:flex;flex-direction:column;gap:11px;margin:4px 0 0}
 .arrd-field{display:flex;flex-direction:column;gap:5px}
-.arrd-field label{font:600 13.5px/1.3 var(--body);color:var(--black)}
-.arrd-field input{font:400 17px/1.3 var(--body);padding:12px 13px;border-radius:9px;border:2px solid var(--line);background:#fff;color:var(--black);width:100%;margin:0;height:auto;box-shadow:none}
+.arrd-field label{font-family:var(--body);font-weight:600;font-size:13.5px;line-height:1.3;color:var(--black)}
+.arrd-field input{font-family:var(--body);font-weight:400;font-size:17px;line-height:1.3;padding:12px 13px;border-radius:9px;border:2px solid var(--line);background:#fff;color:var(--black);width:100%;margin:0;height:auto;box-shadow:none}
 .arrd-field input:focus{outline:none;border-color:var(--blue)}
 .arrd-field input[aria-invalid="true"]{border-color:var(--red)}
 .arrd-row{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:10px}
 .arrd-note{font-size:14px;color:var(--black)}
-.arrd-check{display:flex;gap:10px;align-items:flex-start;font:400 12.5px/1.45 var(--body);color:var(--muted);cursor:pointer}
+.arrd-check{display:flex;gap:10px;align-items:flex-start;font-family:var(--body);font-weight:400;font-size:12.5px;line-height:1.45;color:var(--muted);cursor:pointer}
 .arrd-check input{width:19px;height:19px;margin:1px 0 0;accent-color:var(--blue);flex:none}
-.arrd-err{color:var(--red);font:600 14px/1.4 var(--body)}
+.arrd-err{color:var(--red);font-family:var(--body);font-weight:600;font-size:14px;line-height:1.4}
 .arrd-err:empty{display:none}
-.arrd-fine{font:400 12px/1.5 var(--body);color:var(--muted)}
+.arrd-fine{font-family:var(--body);font-weight:400;font-size:12px;line-height:1.5;color:var(--muted)}
 .arrd-fine a{color:var(--muted)}
-.arrd-copy{align-self:center;font:600 13px/1 var(--sub);text-transform:uppercase;letter-spacing:.08em;padding:10px 16px;border-radius:8px;border:2px solid var(--blue);background:transparent;color:var(--blue);cursor:pointer}
+.arrd-copy{align-self:center;font-family:var(--sub);font-weight:600;font-size:13px;line-height:1;text-transform:uppercase;letter-spacing:.08em;padding:10px 16px;border-radius:8px;border:2px solid var(--blue);background:transparent;color:var(--blue);cursor:pointer}
 .arrd-ok{color:var(--blue);font-weight:600;font-size:14px}
-.arrd-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:2147482999;writing-mode:vertical-rl;background:var(--navy);color:var(--white);border:0;border-left:4px solid var(--red);border-radius:10px 0 0 10px;padding:16px 9px;font:600 13px/1 var(--sub);text-transform:uppercase;letter-spacing:.12em;cursor:pointer;box-shadow:0 8px 24px -10px rgba(0,0,0,.5)}
+.arrd-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:2147482999;writing-mode:vertical-rl;background:var(--navy);color:var(--white);border:0;border-left:4px solid var(--red);border-radius:10px 0 0 10px;padding:16px 9px;font-family:var(--sub);font-weight:600;font-size:13px;line-height:1;text-transform:uppercase;letter-spacing:.12em;cursor:pointer;box-shadow:0 8px 24px -10px rgba(0,0,0,.5)}
 @media (max-width:640px){.arrd-tab{padding:13px 7px;font-size:12px}}
 @media (prefers-reduced-motion:reduce){.arrd-sheet{animation:none!important}.arrd-dev,.arrd-ly,.arrd-z,.arrd-heat,.arrd-cool{transition:none!important}}
 `;
@@ -299,7 +305,7 @@ html.arrd-open iframe[id^="podium"],html.arrd-open #podium-website-widget{visibi
 /* ---------------- markup ---------------- */
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MARKUP = `
-<div class="arrd-sheet" role="dialog" aria-modal="true" aria-label="Comfort Dial: turn the thermostat for a gift from ARR Heating + Cooling">
+<div class="arrd-sheet" role="dialog" aria-modal="true" tabindex="-1" aria-label="Comfort Dial: turn the thermostat for a gift from ARR Heating + Cooling">
   <div class="arrd-head">
     <p class="arrd-brand"><b>ARR Heating + Cooling</b> · Since 1935</p>
     <button class="arrd-x" type="button" aria-label="Close" data-arrd="close">×</button>
@@ -766,7 +772,7 @@ function open(trigger = 'button') {
   const s = store.get();
   if (live(s.won)) showDone(s.won, true);
   else if (live(s.hold)) showClaim(s.hold);
-  else { showPlay(true); focusFirst('[data-arrd="turn"]'); }
+  else { showPlay(true); focusFirst('.arrd-sheet'); }
   loadStatus(); loadWeather();
   track('dial_opened', { trigger });
 }
