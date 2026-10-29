@@ -43,6 +43,12 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
     return body as R[];
   }
   const one = async <R>(res: Response, what: string) => (await rows<R>(res, what))[0] || null;
+  /** A page of rows asked for with Prefer: count=exact, and the total that matched. */
+  async function page<R>(res: Response, what: string) {
+    const list = await rows<R>(res, what);
+    const m = /\/(\d+)$/.exec(res.headers.get('content-range') || '');
+    return { rows: list, total: m ? Number(m[1]) : list.length };
+  }
   async function count(table: string, params: Record<string, string>) {
     const res = await call('GET', table, { select: 'id', limit: '1', ...params }, { prefer: 'count=exact' });
     if (!res.ok) throw new Error(`supabase count ${table} ${res.status}`);
@@ -193,10 +199,34 @@ export function supabaseDb(env: unknown, fetcher: typeof fetch = fetch): DialDb 
       if (s.status === 'expired') Object.assign(p, { voided_at: 'is.null', redeemed_at: 'is.null', expires_at: `lte.${now}` });
       if (s.status === 'void') p.voided_at = 'not.is.null';
       if (s.gift) p.gift = `eq.${s.gift}`;
-      const res = await call('GET', T.entries, p, { prefer: 'count=exact' });
-      const list = await rows<Entry>(res, 'search entries');
-      const m = /\/(\d+)$/.exec(res.headers.get('content-range') || '');
-      return { rows: list, total: m ? Number(m[1]) : list.length };
+      return page<Entry>(await call('GET', T.entries, p, { prefer: 'count=exact' }), 'search entries');
+    },
+    async searchTurns(s) {
+      const p: Record<string, string> = { select: '*', order: 'created_at.desc', limit: String(s.limit), offset: String(s.offset) };
+      const now = iso(s.now);
+      if (s.outcome === 'claimed') p.claimed_at = 'not.is.null';
+      if (s.outcome === 'holding') Object.assign(p, { claimed_at: 'is.null', held_until: `gt.${now}` });
+      if (s.outcome === 'unclaimed') Object.assign(p, { claimed_at: 'is.null', held_until: `lte.${now}` });
+      if (s.gift) p.gift = `eq.${s.gift}`;
+      if (s.device) p.device = `eq.${s.device}`;
+      return page<Turn>(await call('GET', T.turns, p, { prefer: 'count=exact' }), 'search turns');
+    },
+    async entriesForTurns(ids) {
+      const out: Entry[] = [];
+      for (let i = 0; i < ids.length; i += 100) {   // turn ids are uuids; 100 keeps the URL short
+        out.push(...await rows<Entry>(await call('GET', T.entries, { select: '*', turn_id: `in.(${ids.slice(i, i + 100).join(',')})` }), 'entries for turns'));
+      }
+      return out;
+    },
+    async turnsByDevice(devices) {
+      const out: Record<string, number> = {};
+      const list = [...new Set(devices.filter(Boolean))];
+      for (let i = 0; i < list.length; i += 100) {   // device ids are [\w-]{8,64} (api/turn.ts), safe inside quotes
+        const r = await rows<{ device: string }>(await call('GET', T.turns,
+          { select: 'device', device: `in.(${list.slice(i, i + 100).map((d) => `"${d}"`).join(',')})`, limit: '1000' }), 'turns by device');
+        for (const x of r) out[x.device] = (out[x.device] || 0) + 1;
+      }
+      return out;
     },
     async redeemEntry(id, now, note) {
       return one<Entry>(await call('PATCH', T.entries, { id: `eq.${id}`, redeemed_at: 'is.null', voided_at: 'is.null', select: '*' },

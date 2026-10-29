@@ -1,7 +1,7 @@
 /* In-memory DialDb for tests and local dev (DIAL_MEMORY_DB=1). Mirrors the Supabase constraints and
  * compare-and-set updates, so tests of the service logic exercise the same rules production enforces.
  * The admin half (AdminDb) mirrors the tables and the comfort_dial_stats function in the admin migration. */
-import { codeStatus, parseSearch } from './db.ts';
+import { codeStatus, parseSearch, turnOutcome } from './db.ts';
 import type { Admin, AdminDb, AuditRow, ConfigVersion, DialDb, Entry, Home, InsertResult, Membership, NewEntry, OAuthToken, Stats, Turn } from './db.ts';
 import { chicagoDay } from './rules.js';
 
@@ -143,6 +143,17 @@ export function memoryDb(seed: MemorySeed = {}): MemoryDb {
       };
       const all = entries.filter(hit).sort((a, b) => b.created_at.localeCompare(a.created_at));
       return { rows: all.slice(s.offset, s.offset + s.limit).map((e) => ({ ...e })), total: all.length };
+    },
+    async searchTurns(s) {
+      const all = turns.filter((t) => (!s.outcome || turnOutcome(t, s.now) === s.outcome) && (!s.gift || t.gift === s.gift) && (!s.device || t.device === s.device))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      return { rows: all.slice(s.offset, s.offset + s.limit).map((t) => copy(t)), total: all.length };
+    },
+    async entriesForTurns(ids) { return entries.filter((e) => e.turn_id && ids.includes(e.turn_id)).map((e) => ({ ...e })); },
+    async turnsByDevice(devices) {
+      const out: Record<string, number> = {};
+      for (const t of turns) if (t.device && devices.includes(t.device)) out[t.device] = (out[t.device] || 0) + 1;
+      return out;
     },
     async redeemEntry(id, now, note) {
       const e = entries.find((x) => x.id === id && !x.redeemed_at && !x.voided_at);
