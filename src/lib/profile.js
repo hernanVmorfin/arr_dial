@@ -56,6 +56,12 @@ export function priorLine(p) {
   return parts.join(' · ');
 }
 
+/** 'GA: 123.456 · Meta browser: fb.1.…': the ad and analytics ids the visit carried, to match them up later. */
+export function idsLine(c) {
+  const ids = c && c.ids;
+  return ids ? Object.entries(ids).map(([k, v]) => `${{ ga: 'GA', fbp: 'Meta browser', fbc: 'Meta click', kx: 'Klaviyo' }[k] || k}: ${v}`).join(' · ') : '';
+}
+
 /** 'visit 3 since Oct 2 · from google.com, google/cpc · landed on /furnace-repair · 5 pages · mobile · near Orland Park 60462 (in area)' */
 export function visitLine(c) {
   if (!c) return '';

@@ -241,6 +241,8 @@ dialog.drawer { width: min(720px, calc(100vw - 32px)); }
 /* ---------------- codes ---------------- */
 .filters { display: grid; grid-template-columns: minmax(0, 1fr) 170px 220px auto; gap: 10px; align-items: end; margin-bottom: 14px; }
 @media (max-width: 860px) { .filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .filters .q { grid-column: 1 / -1; } }
+.filters.spins { grid-template-columns: 200px 260px minmax(0, 1fr) auto; }
+@media (max-width: 860px) { .filters.spins { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .filters.spins #sdev:empty { display: none; } }
 .pager { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
 .facts { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 6px 14px; font-size: 14px; margin: 0; }
 .facts dt { color: var(--muted); font-weight: 600; }

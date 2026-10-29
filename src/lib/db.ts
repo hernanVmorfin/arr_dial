@@ -101,6 +101,9 @@ export type AuditRow = {
 /** issued: usable now · redeemed · expired: past expires_at unused · void: cancelled in the admin */
 export type CodeStatus = 'issued' | 'redeemed' | 'expired' | 'void';
 export type EntrySearch = { q?: string; status?: CodeStatus; gift?: string; limit: number; offset: number; now: Date };
+/** claimed: a code came of it · holding: the gift is on their screen now, hold running · unclaimed: the hold ran out */
+export type TurnOutcome = 'claimed' | 'holding' | 'unclaimed';
+export type TurnSearch = { outcome?: TurnOutcome; gift?: string; device?: string; limit: number; offset: number; now: Date };
 
 /** Results for a period. turns/players/byGift.turns count turns made in the period; claims/redeemed/sources count
  *  codes issued in the period (redeemed = of those, how many were used, whenever). byDay.redeemed counts redemptions
@@ -138,6 +141,13 @@ export interface AdminDb {
   redeemEntry(id: string, now: Date, note: string): Promise<Entry | null>;
   stats(since: Date, until: Date): Promise<Stats>;
 
+  /** Every turn of the dial, claimed or not, newest first. */
+  searchTurns(s: TurnSearch): Promise<{ rows: Turn[]; total: number }>;
+  /** The codes that came from these turns (a turn has at most one). */
+  entriesForTurns(turnIds: string[]): Promise<Entry[]>;
+  /** How many turns each of these devices has taken, ever. */
+  turnsByDevice(devices: string[]): Promise<Record<string, number>>;
+
   /** Every month's free-year row (held or claimed), oldest month first. A month nobody has turned for has none. */
   allMemberships(): Promise<Membership[]>;
   /** The codes issued for a free year (entries with a mem_month). */
@@ -161,3 +171,6 @@ export function parseSearch(raw: string | undefined): { code: string } | { phone
 
 export const codeStatus = (e: Entry, now: Date): CodeStatus =>
   e.voided_at ? 'void' : e.redeemed_at ? 'redeemed' : new Date(e.expires_at) <= now ? 'expired' : 'issued';
+
+export const turnOutcome = (t: Turn, now: Date): TurnOutcome =>
+  t.claimed_at ? 'claimed' : new Date(t.held_until) > now ? 'holding' : 'unclaimed';

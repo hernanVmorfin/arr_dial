@@ -7,11 +7,12 @@ import { BASE, BOOT, api, esc, $, $$, dialog, confirmDialog, toast, ago } from '
 import * as promos from './promos.js';
 import * as settings from './settings.js';
 import * as codes from './codes.js';
+import * as spins from './spins.js';
 import * as results from './results.js';
 import * as history from './history.js';
 import * as team from './team.js';
 
-const TABS = { promos, settings, codes, results, history, team };
+const TABS = { promos, settings, codes, spins, results, history, team };
 let current = null;
 
 function route() {

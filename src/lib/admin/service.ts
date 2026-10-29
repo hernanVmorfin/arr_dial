@@ -7,15 +7,16 @@
  *   publishConfig  validate, lay out the dial, insert as version N+1. Two people editing at once: the second publish
  *                  names the version it started from, finds a newer one, and is refused rather than overwriting.
  *   codeAction     redeem · void · restore · extend · resend, each written to the audit trail with who did it.
- *   freeYears      each month's free year as stored (won, held, free), for the Settings tab's schedule. */
+ *   freeYears      each month's free year as stored (won, held, free), for the Settings tab's schedule.
+ *   spins          every turn, claimed or not, for the Spins tab: the people who turned and walked away too. */
 import { addDays, chicagoDay, chicagoMidnight, chicagoMonth, isCode, layoutZones, validateConfig } from '../rules.js';
 import { codeStatus } from '../db.ts';
 import { forgetConfig } from '../config.ts';
-import type { AdminDb, DialDb, Entry } from '../db.ts';
+import type { AdminDb, DialDb, Entry, TurnSearch } from '../db.ts';
 import type { Cfg } from '../dial.ts';
 import type { PasswordAuth } from './auth.ts';
 import { SESSION_HOURS, type Session } from './session.ts';
-import { codeView, type CodeView } from './view.ts';
+import { codeView, spinView, type CodeView, type SpinView } from './view.ts';
 
 type Store = DialDb & AdminDb;
 export type Fail = { ok: false; status: number; error: string; errors?: string[]; warnings?: string[] };
@@ -242,6 +243,20 @@ export async function changePassword(db: Store, auth: PasswordAuth, input: { ses
   await auth.setPassword(user.id, next);
   await db.audit({ at: now.toISOString(), actor: input.session.email, action: 'password', target: input.session.email, detail: null, ip: input.ip });
   return { ok: true };
+}
+
+/* ---------------- spins ---------------- */
+
+/** Every turn of the dial, claimed or not, with the code it became and how many times its device has turned. */
+export async function spins(db: Store, cfg: Cfg, s: TurnSearch): Promise<{ rows: SpinView[]; total: number }> {
+  const r = await db.searchTurns(s);
+  const claimed = r.rows.filter((t) => t.claimed_at).map((t) => t.id);
+  const [codes, perDevice] = await Promise.all([
+    claimed.length ? db.entriesForTurns(claimed) : Promise.resolve([]),
+    db.turnsByDevice(r.rows.map((t) => t.device).filter((d): d is string => !!d))
+  ]);
+  const byTurn = new Map(codes.map((e) => [e.turn_id, e]));
+  return { rows: r.rows.map((t) => spinView(t, byTurn.get(t.id) || null, t.device ? perDevice[t.device] || 1 : 1, cfg, s.now)), total: r.total };
 }
 
 /* ---------------- results ---------------- */

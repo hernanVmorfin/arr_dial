@@ -1,7 +1,7 @@
 /* Codes: find a winner by code, phone, name or street; open one to redeem, void, restore, extend or text it again.
  * Every action lands on the code's history with who did it. Monday and Klaviyo follow on their own. */
 import { S } from './store.js';
-import { homeLine, homeHints, priorLine, priorChecked, visitLine } from '../lib/profile.js';
+import { homeLine, homeHints, idsLine, priorLine, priorChecked, visitLine } from '../lib/profile.js';
 import { BASE, api, esc, $, dialog, toast, fmtDate, fmtWhen, fmtShortWhen, fmtPhone, fmtNum } from './ui.js';
 
 export const STATUS = { issued: 'Usable', redeemed: 'Redeemed', expired: 'Expired', void: 'Void' };
@@ -19,6 +19,7 @@ export function render(main) {
     <div class="head"><div>
       <p class="eyebrow">Find a winner</p><h1>Codes</h1>
       <p class="muted">Search by code, phone number, first name or street. Open a code to redeem, void, extend or text it again.</p>
+      <p class="small muted">A spin only becomes a code once they give a phone number. <a href="#spins">See every spin</a>, claimed or not.</p>
     </div></div>
     <div class="filters">
       <label class="f q"><span>Search</span><input type="search" id="cq" placeholder="ARR-7K3P, 708 555, Maria, Ravinia" value="${esc(f.q)}" autocomplete="off"></label>
@@ -102,7 +103,7 @@ function seenBefore(p) {
 /* What we learned beyond the form: the county record, earlier contact, the visit. Internal only. */
 function known(e) {
   const hints = homeHints(e.home);
-  const ids = e.context && e.context.ids ? Object.entries(e.context.ids).map(([k, v]) => `${{ ga: 'GA', fbp: 'Meta browser', fbc: 'Meta click', kx: 'Klaviyo' }[k] || k}: ${v}`).join(' · ') : '';
+  const ids = idsLine(e.context);
   const rows = [
     ['Home', e.home ? esc(homeLine(e.home)) : `<span class="muted">${e.address ? 'Not in county records' : 'No address yet'}</span>`],
     hints.length ? ['Worth asking', esc(hints.join('; '))] : null,

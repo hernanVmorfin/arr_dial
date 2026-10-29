@@ -11,7 +11,7 @@ import { memoryAuth } from './auth.ts';
 import { readSession, signSession, sessionCookie, cookieValue } from './session.ts';
 import {
   signIn, publishConfig, setDialEnabled, rollbackTo, codeAction, addAdmin, removeAdmin, changePassword, currentConfig,
-  statsRange, cleanConfig, freeYears, RESENDS_PER_DAY
+  statsRange, cleanConfig, freeYears, spins, RESENDS_PER_DAY
 } from './service.ts';
 
 const builtIn = JSON.parse(readFileSync(new URL('../../../data/dial.json', import.meta.url), 'utf8'));
@@ -253,6 +253,52 @@ test('code lookup understands codes, phone fragments and names; filters by statu
   assert.deepEqual((await db.searchEntries({ status: 'issued', limit: 50, offset: 0, now })).rows.map((r) => r.code), [b.code]);
   const page = await db.searchEntries({ limit: 1, offset: 1, now });
   assert.deepEqual([page.rows.length, page.total], [1, 2]);
+});
+
+/* ---------------- spins ---------------- */
+
+test('spins: every turn shows, claimed or not, with its code, its outcome and how often that device turned', async () => {
+  const { db } = setup();
+  const cfg = await liveConfig(db, builtIn);
+  const won = await win(db, cfg, '7085550401', OCT);
+  const same = { ip: '10.7.0.1', device: 'dev-repeat-abcdefgh', ipLimits: true };
+  const walked = await takeTurn(db, cfg, same, later(1), () => 0.1);
+  const holding = await takeTurn(db, cfg, same, later(20), () => 0.1);
+  assert.ok(walked.ok && holding.ok);
+  const now = later(25);   // the first hold ran out at +11 min, the second runs until +30
+  const all = await spins(db, cfg, { limit: 50, offset: 0, now });
+  assert.equal(all.total, 3);
+  assert.deepEqual(all.rows.map((s) => [s.outcome, s.code, s.deviceTurns]), [
+    ['holding', null, 2], ['unclaimed', null, 2], ['claimed', won.code, 1]
+  ], 'newest first');
+  assert.equal(all.rows[2].phone, '7085550401');
+  assert.equal(all.rows[2].codeStatus, 'issued');
+  assert.equal(all.rows[1].giftName, all.rows[2].giftName, 'the promo it landed on, by name');
+  const ids = (s: Awaited<ReturnType<typeof spins>>) => s.rows.map((r) => r.id);
+  assert.deepEqual(ids(await spins(db, cfg, { outcome: 'unclaimed', limit: 50, offset: 0, now })), [walked.ok && walked.turn.id]);
+  assert.deepEqual(ids(await spins(db, cfg, { outcome: 'claimed', limit: 50, offset: 0, now })), [won.turn_id]);
+  assert.equal((await spins(db, cfg, { device: same.device, limit: 50, offset: 0, now })).total, 2);
+  assert.equal((await spins(db, cfg, { outcome: 'holding', limit: 50, offset: 0, now: later(31) })).total, 0, 'a hold that ran out is not holding');
+});
+
+test('spins: the Supabase store filters turns, then fetches their codes and each device\'s count', async () => {
+  const urls: string[] = [];
+  const fake = (async (u: URL) => {
+    urls.push(decodeURIComponent(String(u)));
+    const body = String(u).includes('comfort_dial_turns') && !String(u).includes('select=device')
+      ? [{ id: 'a1', device: 'dev-1-abcdefgh', claimed_at: OCT.toISOString() }] : [];
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-range': '0-0/7' } });
+  }) as unknown as typeof fetch;
+  const sb = supabaseDb({ SUPABASE_URL: 'https://x.supabase.co/', SUPABASE_SECRET_KEY: 'sb_secret_test' }, fake);
+  const r = await sb.searchTurns({ outcome: 'unclaimed', gift: 'svc20', limit: 50, offset: 0, now: OCT });
+  assert.equal(r.total, 7);
+  await sb.entriesForTurns(['a1', 'b2']);
+  await sb.turnsByDevice(['dev-1-abcdefgh', 'dev-1-abcdefgh']);
+  assert.deepEqual(urls, [
+    `https://x.supabase.co/rest/v1/comfort_dial_turns?select=*&order=created_at.desc&limit=50&offset=0&claimed_at=is.null&held_until=lte.${OCT.toISOString()}&gift=eq.svc20`,
+    'https://x.supabase.co/rest/v1/comfort_dial_entries?select=*&turn_id=in.(a1,b2)',
+    'https://x.supabase.co/rest/v1/comfort_dial_turns?select=device&device=in.("dev-1-abcdefgh")&limit=1000'
+  ]);
 });
 
 /* ---------------- team ---------------- */
