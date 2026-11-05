@@ -1,8 +1,7 @@
-/* Monday: every win becomes an item on the Instant Pricing Leads board, so CSRs work dial winners in the same queue.
- * The code is in the item name, which is what the CSR searches when a customer calls with it.
- * Column ids are the pricing app's (board 18432287526, apps/pricing/src/lib/leads.ts in the v2 repo); a different
- * board means different ids. The "Code status" column is new: its id comes from MONDAY_CODE_STATUS_COLUMN. */
-import { chicagoDate, fmtPhone } from './rules.js';
+/* Monday: each claim becomes a lead on the configured board. Shared contact columns retain their IDs;
+ * MONDAY_DIAL_COLUMNS supplies the dedicated gift, date and attribution columns. Older deployments retain
+ * the descriptive item name until the separate gift-code column is mapped. */
+import { chicagoDate, chicagoDay, fmtPhone } from './rules.js';
 import { homeHints, homeLine, priorLine, visitLine } from './profile.js';
 import { envVar } from './env.ts';
 import type { Entry, Lead } from './db.ts';
@@ -14,8 +13,41 @@ export const MONDAY_COLUMNS = {
 
 export const mondayConfigured = (env: unknown) => !!(envVar(env, 'MONDAY_API_TOKEN') && envVar(env, 'MONDAY_BOARD_ID'));
 
-export function itemName(e: Entry, gift: Gift) {
+export function itemName(e: Entry, gift: Gift, structured = false) {
+  if (structured) return e.first_name || e.code;
   return `${e.first_name ? `${e.first_name} · ` : ''}Comfort Dial ${e.code}: ${gift.name}`;
+}
+
+type DialColumnKey = 'gift' | 'code' | 'value' | 'claimed' | 'expires' | 'zip' | 'campaign' | 'landing' | 'smsConsent' | 'property';
+type DialColumns = Partial<Record<DialColumnKey, string>>;
+
+/** Optional mappings keep older deployments compatible while the dedicated board is configured. */
+function dialColumns(env: unknown): DialColumns {
+  const raw = envVar(env, 'MONDAY_DIAL_COLUMNS');
+  if (!raw) return {};
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('MONDAY_DIAL_COLUMNS must be an object');
+  return parsed as DialColumns;
+}
+
+function structuredColumns(e: Entry, gift: Gift, columns: DialColumns) {
+  const values: Record<string, unknown> = {};
+  const put = (key: DialColumnKey, value: unknown) => {
+    const id = columns[key];
+    if (id && value != null && value !== '') values[id] = value;
+  };
+  put('gift', { labels: [gift.name] });
+  put('code', e.code);
+  put('value', gift.value);
+  put('claimed', { date: chicagoDay(e.created_at) });
+  put('expires', { date: chicagoDay(e.expires_at) });
+  put('zip', e.zip);
+  put('campaign', e.utm?.utm_campaign);
+  put('landing', e.context?.landing || e.page);
+  put('smsConsent', { checked: e.sms_marketing ? 'true' : 'false' });
+  const property = homeLine(e.home);
+  if (property) put('property', { text: property });
+  return values;
 }
 
 const utmText = (u: Entry['utm']) => (u && Object.keys(u).length ? Object.entries(u).map(([k, v]) => `${k.replace(/^utm_/, '')}=${v}`).join(' · ') : '');
@@ -42,7 +74,7 @@ export function pasteBlock(e: Entry, gift: Gift, cfg: Cfg) {
 
 /* Two sets so a bad column can never lose the item: `core` goes in create_item and holds only columns that have been
  * on the board since day one; everything else is `details`, written by a second call that may fail on its own. */
-export function mondayColumns(e: Entry, gift: Gift, cfg: Cfg, codeStatusColumn?: string) {
+export function mondayColumns(e: Entry, gift: Gift, cfg: Cfg, codeStatusColumn?: string, columns: DialColumns = {}) {
   const C = MONDAY_COLUMNS;
   const filled = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v != null && v !== ''));
   const core = filled({
@@ -52,8 +84,9 @@ export function mondayColumns(e: Entry, gift: Gift, cfg: Cfg, codeStatusColumn?:
   });
   const details = filled({
     [C.quote]: { text: pasteBlock(e, gift, cfg) },
-    [C.source]: ['Comfort Dial', utmText(e.utm)].filter(Boolean).join(' · '),
-    ...(codeStatusColumn ? { [codeStatusColumn]: { label: e.redeemed_at ? 'Redeemed' : 'Issued' } } : {})
+    [C.source]: Object.keys(columns).length ? e.utm?.utm_source || 'Comfort Dial' : ['Comfort Dial', utmText(e.utm)].filter(Boolean).join(' · '),
+    ...structuredColumns(e, gift, columns),
+    ...(codeStatusColumn ? { [codeStatusColumn]: { label: e.voided_at ? 'Void' : e.redeemed_at ? 'Redeemed' : 'Issued' } } : {})
   });
   return { core, details };
 }
@@ -72,12 +105,13 @@ async function monday(env: unknown, query: string, variables: Record<string, unk
 
 export async function createDialItem(env: unknown, e: Entry, gift: Gift, cfg: Cfg): Promise<{ itemId: string; detailsError?: string }> {
   const board = envVar(env, 'MONDAY_BOARD_ID');
-  const { core, details } = mondayColumns(e, gift, cfg, envVar(env, 'MONDAY_CODE_STATUS_COLUMN'));
+  const columns = dialColumns(env);
+  const { core, details } = mondayColumns(e, gift, cfg, envVar(env, 'MONDAY_CODE_STATUS_COLUMN'), columns);
   const created = await monday(env, 'mutation($b: ID!, $n: String!, $c: JSON!) { create_item(board_id: $b, item_name: $n, column_values: $c) { id } }',
-    { b: board, n: itemName(e, gift), c: JSON.stringify(core) });
+    { b: board, n: itemName(e, gift, !!columns.code), c: JSON.stringify(core) });
   const itemId = String(created.create_item.id);
   try {
-    await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c) { id } }',
+    await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c, create_labels_if_missing: true) { id } }',
       { b: board, i: itemId, c: JSON.stringify(details) });
     return { itemId };
   } catch (err) {
@@ -91,9 +125,10 @@ export async function createDialItem(env: unknown, e: Entry, gift: Gift, cfg: Cf
 /** After the optional "book faster" step: new name and address on the existing item. */
 export async function updateDialItem(env: unknown, itemId: string, e: Entry, gift: Gift, cfg: Cfg) {
   const C = MONDAY_COLUMNS;
-  const values: Record<string, unknown> = { name: itemName(e, gift), [C.quote]: { text: pasteBlock(e, gift, cfg) } };
+  const columns = dialColumns(env);
+  const values: Record<string, unknown> = { name: itemName(e, gift, !!columns.code), [C.quote]: { text: pasteBlock(e, gift, cfg) }, ...structuredColumns(e, gift, columns) };
   if (e.address) values[C.address] = `${e.address}, ${e.zip}`;
-  await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c) { id } }',
+  await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c, create_labels_if_missing: true) { id } }',
     { b: envVar(env, 'MONDAY_BOARD_ID'), i: itemId, c: JSON.stringify(values) });
 }
 
@@ -102,7 +137,7 @@ export async function updateDialItem(env: unknown, itemId: string, e: Entry, gif
  *  webhook back at /api/redeemed, which finds the code already redeemed and does nothing. */
 export async function syncDialItem(env: unknown, itemId: string, e: Entry, gift: Gift, cfg: Cfg) {
   const col = envVar(env, 'MONDAY_CODE_STATUS_COLUMN');
-  const values: Record<string, unknown> = { [MONDAY_COLUMNS.quote]: { text: pasteBlock(e, gift, cfg) } };
+  const values: Record<string, unknown> = { [MONDAY_COLUMNS.quote]: { text: pasteBlock(e, gift, cfg) }, ...structuredColumns(e, gift, dialColumns(env)) };
   if (col) values[col] = { label: e.voided_at ? 'Void' : e.redeemed_at ? 'Redeemed' : 'Issued' };
   await monday(env, 'mutation($b: ID!, $i: ID!, $c: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $c, create_labels_if_missing: true) { id } }',
     { b: envVar(env, 'MONDAY_BOARD_ID'), i: itemId, c: JSON.stringify(values) });
