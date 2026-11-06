@@ -193,3 +193,17 @@ leave that row alone: if Podium rotates refresh tokens, the newest one is only t
   static token and stop when Podium expires it (the win still shows on screen). See [Podium sign-in](#podium-sign-in).
 - Two isolates whose tokens run out at the same moment can both refresh. The one Podium refuses picks up the other's
   pair from Supabase. Podium's docs don't say whether refresh tokens rotate, so this is handled both ways.
+
+## Structured Monday lead table
+
+The dedicated ARR DIAL LEADS board keeps the shared phone/address/follow-up IDs. `MONDAY_DIAL_COLUMNS` is optional JSON mapping logical fields to the board's typed column IDs:
+
+```json
+{"gift":"dial_gift","code":"dial_code","value":"dial_value","claimed":"dial_claimed","expires":"dial_expires","zip":"dial_zip","campaign":"dial_campaign","landing":"dial_landing","smsConsent":"dial_sms","property":"dial_property"}
+```
+
+Gift is a dropdown, value a number, claimed/expires dates, SMS consent a checkbox, property context long text, and the remaining mapped fields text. Dates use Chicago calendar days. Existing `MONDAY_CODE_STATUS_COLUMN` must point to the separate Code status column (Issued/Redeemed/Void), never Follow-up status. With a gift-code column mapped, item names use the supplied first name or the code. Missing names, addresses and marketing attribution are not inferred.
+
+Follow-up status, Assigned to and Next follow-up belong to the team: later customer details and code changes do not reset them. Claim creation initializes Follow-up status to New. Details, redemption, void, restore and expiry extensions refresh the structured fields. Full context remains in Lead details; a rejected details mutation falls back to an item update without discarding the lead.
+
+After changing mappings, redeploy Webflow Cloud. Verify column types and returned values with an existing item, not just `/app/api/health`. Saved Follow-up and Marketing & context views hide unrelated pricing fields without deleting columns. Expiring soon should combine Issued with a rolling next-seven-days expiry filter; Needs follow-up combines Issued with New/Contacted/Visit scheduled.
